@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
-import { HealthResponse } from '@sports-drive/shared-types';
+import { HealthResponse } from './types/index.js';
 
 describe('Health Endpoint', () => {
   let app: ReturnType<typeof Fastify>;

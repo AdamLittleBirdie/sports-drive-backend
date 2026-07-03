@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import type { HealthResponse } from '@sports-drive/shared-types';
+import type { HealthResponse } from '../types/index.js';
 
 /**
  * Health-check route — kept as a standalone plugin so it can be

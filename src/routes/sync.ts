@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { syncFitzroyData } from '../services/fitzroy.js';
-import type { SyncResult, ApiResponse } from '@sports-drive/shared-types';
+import type { SyncResult, ApiResponse } from '../types/index.js';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
   /**
