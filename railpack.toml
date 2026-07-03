@@ -2,7 +2,7 @@
 packageManager = "pnpm"
 
 [build]
-cmd = "tsc --build"
+cmd = "pnpm install && pnpm build"
 
 [start]
 cmd = "node dist/index.js"
