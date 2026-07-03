@@ -12,7 +12,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sports-drive/shared-types": "workspace:*",
     "axios": "^1.6.0",
     "fastify": "^4.25.0",
     "@fastify/cors": "^9.0.0",
