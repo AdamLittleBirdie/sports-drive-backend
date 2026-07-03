@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { sql } from '../db.js';
-import type { PlayerWithStats, MatchStat, ApiResponse } from '../types/index.js';
+import type { Player, PlayerWithStats, MatchStat, ApiResponse } from '../types/index.js';
 
 export async function playerRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -16,7 +16,7 @@ export async function playerRoutes(app: FastifyInstance): Promise<void> {
       }
 
       try {
-        const [player] = await sql`
+        const [player] = await sql<Player[]>`
           SELECT id, name, team_id, position, number
           FROM players
           WHERE id = ${id}
@@ -26,12 +26,12 @@ export async function playerRoutes(app: FastifyInstance): Promise<void> {
           return reply.code(404).send({ statusCode: 404, error: 'Player not found' });
         }
 
-        const stats = await sql`
+        const stats = await sql<MatchStat[]>`
           SELECT *
           FROM match_stats
           WHERE player_id = ${id}
           ORDER BY match_id ASC
-        ` as MatchStat[];
+        `;
 
         return reply.code(200).send({ statusCode: 200, data: { ...player, stats } });
       } catch (err) {

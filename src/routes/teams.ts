@@ -44,12 +44,12 @@ export async function teamRoutes(app: FastifyInstance): Promise<void> {
           return reply.code(404).send({ statusCode: 404, error: 'Team not found' });
         }
 
-        const players = await sql`
+        const players = await sql<Player[]>`
           SELECT id, name, team_id, position, number
           FROM players
           WHERE team_id = ${id}
           ORDER BY name ASC
-        ` as Player[];
+        `;
 
         return reply.code(200).send({ statusCode: 200, data: { ...team, players } });
       } catch (err) {
