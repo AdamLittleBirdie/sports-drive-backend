@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import Fastify from 'fastify';
+import Fastify, { FastifyInstance } from 'fastify';
 import { HealthResponse } from './types/index.js';
 
 describe('Health Endpoint', () => {
-  let app: ReturnType<typeof Fastify>;
+  let app: FastifyInstance;
 
   beforeAll(async () => {
     app = Fastify({ logger: false });

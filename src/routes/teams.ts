@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { sql } from '../db.js';
-import type { Team, TeamWithPlayers, ApiResponse } from '../types/index.js';
+import type { Team, Player, TeamWithPlayers, ApiResponse } from '../types/index.js';
 
 export async function teamRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -49,7 +49,7 @@ export async function teamRoutes(app: FastifyInstance): Promise<void> {
           FROM players
           WHERE team_id = ${id}
           ORDER BY name ASC
-        `;
+        ` as Player[];
 
         return reply.code(200).send({ statusCode: 200, data: { ...team, players } });
       } catch (err) {
