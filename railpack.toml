@@ -1,0 +1,8 @@
+[options]
+packageManager = "pnpm"
+
+[build]
+cmd = "tsc --build"
+
+[start]
+cmd = "node dist/index.js"
