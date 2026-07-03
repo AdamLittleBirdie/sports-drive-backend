@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { sql } from '../db.js';
-import type { PlayerWithStats, ApiResponse } from '@sports-drive/shared-types';
+import type { PlayerWithStats, ApiResponse } from '../types/index.js';
 
 export async function playerRoutes(app: FastifyInstance): Promise<void> {
   /**

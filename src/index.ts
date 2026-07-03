@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { HealthResponse } from '@sports-drive/shared-types';
+import { HealthResponse } from './types/index.js';
 import { initDb } from './db.js';
 import { matchRoutes } from './routes/matches.js';
 import { teamRoutes } from './routes/teams.js';
