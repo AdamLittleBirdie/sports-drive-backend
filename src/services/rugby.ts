@@ -395,9 +395,10 @@ async function upsertMatchStats(
  * Sync all rugby data (teams, matches, stats) for every configured league.
  *
  * Strategy:
- *  1. For each league, fetch and upsert teams first so FK references exist.
- *  2. Fetch and upsert games, resolving team api_id → internal DB id.
- *  3. For completed matches only, fetch and upsert per-team statistics.
+ *  1. Delete matches older than 60 days to keep the database lean.
+ *  2. For each league, fetch and upsert teams first so FK references exist.
+ *  3. Fetch and upsert games, skipping any that fall outside the last 60 days.
+ *  4. For completed matches only, fetch and upsert per-team statistics.
  *     (Stats are only available once a match has finished.)
  */
 export async function syncRugbyData(): Promise<RugbySyncResult> {
@@ -406,8 +407,20 @@ export async function syncRugbyData(): Promise<RugbySyncResult> {
   let statsSynced = 0;
   let errors = 0;
 
+  // Compute the cutoff timestamp (60 days ago) once for the whole sync run
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 60);
+
+  // Remove matches older than 60 days before syncing to keep the DB lean
+  try {
+    await sql`DELETE FROM rugby_matches WHERE date < NOW() - INTERVAL '60 days'`;
+    console.log('Rugby sync: pruned matches older than 60 days');
+  } catch (err) {
+    console.error('Rugby sync: failed to prune old matches:', err instanceof Error ? err.message : err);
+  }
+
   for (const league of LEAGUES) {
-    console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season})…`);
+    console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season}, last 60 days)…`);
 
     // ── 1. Teams ────────────────────────────────────────────────────────────
 
@@ -430,7 +443,7 @@ export async function syncRugbyData(): Promise<RugbySyncResult> {
       console.warn(`No team data for ${league.name} — skipping team upsert`);
     }
 
-    // ── 2. Games ─────────────────────────────────────────────────────────────
+    // ── 2. Games (last 60 days only) ─────────────────────────────────────────
 
     const gamesData = await fetchRugbyMatches(league.leagueId, league.season);
 
@@ -442,6 +455,9 @@ export async function syncRugbyData(): Promise<RugbySyncResult> {
     for (const game of gamesData) {
       try {
         const transformed = transformRugbyMatch(game);
+
+        // Skip matches outside the 60-day window
+        if (transformed.date !== null && transformed.date < cutoff) continue;
 
         // Resolve team api_ids to internal DB ids (may be null if team wasn't fetched)
         let homeDbId = teamIdMap.get(game.teams.home.id) ?? null;
@@ -499,8 +515,8 @@ export async function syncRugbyData(): Promise<RugbySyncResult> {
   }
 
   const message = errors === 0
-    ? `Successfully synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records`
-    : `Synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records with ${errors} error(s)`;
+    ? `Successfully synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records (last 60 days)`
+    : `Synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records (last 60 days) with ${errors} error(s)`;
 
   console.log(`Rugby sync complete — ${message}`);
   return { teams_synced: teamsSynced, matches_synced: matchesSynced, stats_synced: statsSynced, errors, message };
