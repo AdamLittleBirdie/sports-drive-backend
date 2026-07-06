@@ -10,6 +10,7 @@ import { connectivityRoutes } from './routes/connectivity.js';
 import { footballRoutes } from './routes/football.js';
 import { rugbyRoutes } from './routes/rugby.js';
 import { basketballRoutes } from './routes/basketball.js';
+import { debugRoutes } from './routes/debug.js';
 
 const app = Fastify({
   logger: process.env.NODE_ENV !== 'production',
@@ -42,6 +43,7 @@ await app.register(connectivityRoutes);
 await app.register(footballRoutes);
 await app.register(rugbyRoutes);
 await app.register(basketballRoutes);
+await app.register(debugRoutes);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
