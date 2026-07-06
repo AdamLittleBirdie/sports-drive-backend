@@ -1,14 +1,12 @@
 /**
  * Fitzroy API integration
  *
- * The Fitzroy R package exposes AFL data via a GitHub Pages site.
- * We fetch pre-built JSON datasets from the raw data files published at:
- *   https://jimmyday12.github.io/fitzRoy/
+ * Fetches real-time AFL fixture data from API-Sports (v3.afl.api-sports.io).
+ * API-Sports provides current and upcoming AFL matches, teams, and scores
+ * via a REST API authenticated with an x-apisports-key header.
  *
- * Because Fitzroy is an R package (not a REST API), we use the
- * afltables.com JSON mirror that the package documentation references,
- * and fall back to a curated static dataset when the upstream is
- * unavailable so the service always starts cleanly.
+ * Falls back to a curated static dataset when the upstream is unavailable
+ * so the service always starts cleanly.
  */
 
 import axios from 'axios';
@@ -24,6 +22,8 @@ interface FitzroyMatch {
   'Home.Points': number | null;
   'Away.Points': number | null;
   Season: number;
+  /** Pre-resolved status from the upstream API, if available. */
+  Status?: 'scheduled' | 'in_progress' | 'completed';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,23 +106,94 @@ const SEED_MATCHES: FitzroyMatch[] = [
   { Season: 2024, Round: 'Round 3', Date: '2024-03-22', 'Home.Team': 'Richmond', 'Away.Team': 'Melbourne', 'Home.Points': null, 'Away.Points': null },
 ];
 
+// ── API-Sports response types ─────────────────────────────────────────────────
+
+interface ApiSportsFixture {
+  fixture: {
+    id: number;
+    date: string;
+    status: {
+      short: string;
+      long: string;
+    };
+  };
+  league: {
+    id: number;
+    name: string;
+    season: number;
+    round: string | null;
+  };
+  teams: {
+    home: { id: number; name: string };
+    away: { id: number; name: string };
+  };
+  goals: {
+    home: number | null;
+    away: number | null;
+  };
+}
+
+interface ApiSportsResponse {
+  response: ApiSportsFixture[];
+}
+
 // ── Fetch from upstream ───────────────────────────────────────────────────────
 
+const API_SPORTS_BASE_URL = 'https://v3.afl.api-sports.io';
+const API_SPORTS_KEY = '404f293f746d43be3efd5457c97406d1';
+
 /**
- * Attempt to fetch match data from the afltables JSON endpoint.
+ * Map an API-Sports status short code to our internal match status.
+ */
+function apiSportsStatus(short: string): 'scheduled' | 'in_progress' | 'completed' {
+  if (short === 'FT' || short === 'AET' || short === 'PEN') return 'completed';
+  if (short === 'LIVE' || short === '1H' || short === '2H' || short === 'HT') return 'in_progress';
+  return 'scheduled'; // NS (Not Started) and anything else
+}
+
+/**
+ * Attempt to fetch match data from the API-Sports AFL API.
  * Returns null if the request fails so callers can fall back to seed data.
  */
 async function fetchUpstreamMatches(): Promise<FitzroyMatch[] | null> {
-  // afltables.com provides season result CSVs; we use a community JSON mirror
-  // that the fitzRoy vignette links to for programmatic access.
-  const url = 'https://afltables.com/afl/stats/bigscore.json';
   try {
-    const response = await axios.get<FitzroyMatch[]>(url, { timeout: 8000 });
-    if (Array.isArray(response.data) && response.data.length > 0) {
-      return response.data;
+    const response = await axios.get<ApiSportsResponse>(`${API_SPORTS_BASE_URL}/fixtures`, {
+      headers: {
+        'x-apisports-key': API_SPORTS_KEY,
+      },
+      timeout: 10000,
+    });
+
+    const fixtures = response.data?.response;
+    if (!Array.isArray(fixtures) || fixtures.length === 0) {
+      console.warn('API-Sports returned empty fixtures list');
+      return null;
     }
-    return null;
-  } catch {
+
+    return fixtures.map((f): FitzroyMatch => {
+      const season = f.league?.season ?? new Date(f.fixture.date).getFullYear();
+      // API-Sports provides round as e.g. "Round - 5"; normalise to "Round 5"
+      const rawRound = f.league?.round ?? '';
+      const round = rawRound
+        ? rawRound.replace(/^Round\s*-\s*/i, 'Round ').trim()
+        : 'Round 1';
+
+      const homePoints = f.goals?.home != null ? f.goals.home * 6 : null;
+      const awayPoints = f.goals?.away != null ? f.goals.away * 6 : null;
+
+      return {
+        Round: round,
+        Date: f.fixture.date,
+        'Home.Team': f.teams.home.name,
+        'Away.Team': f.teams.away.name,
+        'Home.Points': homePoints,
+        'Away.Points': awayPoints,
+        Season: season,
+        Status: apiSportsStatus(f.fixture.status.short),
+      };
+    });
+  } catch (err) {
+    console.error('Failed to fetch from API-Sports:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -155,7 +226,7 @@ export async function syncFitzroyData(): Promise<SyncStats> {
       const homeId = await upsertTeam(m['Home.Team']);
       const awayId = await upsertTeam(m['Away.Team']);
 
-      const status = matchStatus(m['Home.Points'], m['Away.Points'], m.Date);
+      const status = m.Status ?? matchStatus(m['Home.Points'], m['Away.Points'], m.Date);
 
       await sql`
         INSERT INTO matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
