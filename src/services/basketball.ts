@@ -424,6 +424,7 @@ export async function syncBasketballData(): Promise<BasketballSyncResult> {
   // Compute the cutoff timestamp (60 days ago) once for the whole sync run
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - 60);
+  console.log(`Basketball sync cutoff: ${cutoff.toISOString()}`);
 
   // Remove matches older than 60 days before syncing to keep the DB lean
   try {
@@ -466,9 +467,13 @@ export async function syncBasketballData(): Promise<BasketballSyncResult> {
       continue;
     }
 
+    console.log(`Fetched ${gamesData.length} games from API for ${league.name}`);
+
     for (const game of gamesData) {
       try {
         const transformed = transformBasketballMatch(game);
+
+        console.log(`Game ${game.id}: date=${transformed.date?.toISOString() ?? 'null'}, cutoff=${cutoff.toISOString()}, include=${transformed.date === null || transformed.date >= cutoff}`);
 
         // Skip matches outside the 60-day window
         if (transformed.date !== null && transformed.date < cutoff) continue;
