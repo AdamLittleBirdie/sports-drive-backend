@@ -404,7 +404,7 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
 
   // Compute the cutoff date (60 days ago) once for the whole sync run
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 60);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 60);
   const fromDateStr = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
 
   // Remove matches older than 60 days before syncing to keep the DB lean
