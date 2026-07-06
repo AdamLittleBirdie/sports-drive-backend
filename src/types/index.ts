@@ -141,3 +141,70 @@ export interface FootballSyncResult {
   errors: number;
   message: string;
 }
+
+// ── Rugby Domain Types ────────────────────────────────────────────────────────
+
+export interface RugbyTeam {
+  id: number;
+  api_id: number;
+  name: string;
+  abbreviation: string | null;
+  logo_url: string | null;
+  country: string | null;
+  founded: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RugbyMatch {
+  id: number;
+  api_id: number;
+  league_id: number;
+  league_name: string | null;
+  season: number | null;
+  round: string | null;
+  home_team_id: number | null;
+  away_team_id: number | null;
+  home_team_name: string | null;
+  away_team_name: string | null;
+  date: string | null;
+  home_score: number | null;
+  away_score: number | null;
+  status: string | null;
+  venue: string | null;
+  referee: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RugbyMatchStat {
+  id: number;
+  match_id: number | null;
+  team_id: number | null;
+  tries: number | null;
+  goals: number | null;
+  field_goals: number | null;
+  tackles: number | null;
+  offloads: number | null;
+  passes: number | null;
+  runs: number | null;
+  line_breaks: number | null;
+  errors: number | null;
+  penalties: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RugbyMatchWithTeams extends RugbyMatch {
+  home_team: RugbyTeam | null;
+  away_team: RugbyTeam | null;
+  stats?: RugbyMatchStat[];
+}
+
+export interface RugbySyncResult {
+  teams_synced: number;
+  matches_synced: number;
+  stats_synced: number;
+  errors: number;
+  message: string;
+}
