@@ -3,7 +3,7 @@
  *
  * Fetches team, match, and statistics data from v1.basketball.api-sports.io
  * for the following competition:
- *   - NBA (league_id: 12, season: 2024-2025)
+ *   - NBA (league_id: 12, season: 2025)
  *
  * All data is upserted into the basketball_* tables so the function is safe
  * to call repeatedly without creating duplicates.
@@ -20,7 +20,7 @@ const BASKETBALL_API_KEY = '404f293f746d43be3efd5457c97406d1';
 
 /** Leagues and seasons to sync. */
 const LEAGUES: Array<{ leagueId: number; season: string; name: string }> = [
-  { leagueId: 12, season: '2024-2025', name: 'NBA' },
+  { leagueId: 12, season: '2025', name: 'NBA' },
 ];
 
 // ── Raw API response types ────────────────────────────────────────────────────
