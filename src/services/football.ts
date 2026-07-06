@@ -171,17 +171,19 @@ export async function fetchFootballTeams(
 }
 
 /**
- * Fetch all fixtures for a given league and season from API-Football.
+ * Fetch fixtures for a given league and season from API-Football,
+ * optionally filtered to a date range via the `from` parameter.
  * Returns the raw response array, or null on failure.
  */
 export async function fetchFootballMatches(
   leagueId: number,
   season: number,
+  fromDate?: string,
 ): Promise<ApiFixture[] | null> {
   try {
-    const res = await footballApi.get<ApiFixturesEnvelope>('/fixtures', {
-      params: { league: leagueId, season },
-    });
+    const params: Record<string, string | number> = { league: leagueId, season };
+    if (fromDate) params.from = fromDate;
+    const res = await footballApi.get<ApiFixturesEnvelope>('/fixtures', { params });
     const data = res.data?.response;
     if (!Array.isArray(data)) {
       console.warn(`fetchFootballMatches: unexpected response for league ${leagueId}`);
@@ -387,9 +389,11 @@ async function upsertMatchStats(
  * Sync all football data (teams, matches, stats) for every configured league.
  *
  * Strategy:
- *  1. For each league, fetch and upsert teams first so FK references exist.
- *  2. Fetch and upsert fixtures, resolving team api_id → internal DB id.
- *  3. For completed matches only, fetch and upsert per-team statistics.
+ *  1. Delete matches older than 60 days to keep the database lean.
+ *  2. For each league, fetch and upsert teams first so FK references exist.
+ *  3. Fetch fixtures from the last 60 days only (via the API `from` param),
+ *     resolving team api_id → internal DB id.
+ *  4. For completed matches only, fetch and upsert per-team statistics.
  *     (Stats are only available once a match has finished.)
  */
 export async function syncFootballData(): Promise<FootballSyncResult> {
@@ -398,8 +402,21 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
   let statsSynced = 0;
   let errors = 0;
 
+  // Compute the cutoff date (60 days ago) once for the whole sync run
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 60);
+  const fromDateStr = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
+
+  // Remove matches older than 60 days before syncing to keep the DB lean
+  try {
+    await sql`DELETE FROM football_matches WHERE date < NOW() - INTERVAL '60 days'`;
+    console.log('Football sync: pruned matches older than 60 days');
+  } catch (err) {
+    console.error('Football sync: failed to prune old matches:', err instanceof Error ? err.message : err);
+  }
+
   for (const league of LEAGUES) {
-    console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season})…`);
+    console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season}, from=${fromDateStr})…`);
 
     // ── 1. Teams ────────────────────────────────────────────────────────────
 
@@ -422,9 +439,9 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
       console.warn(`No team data for ${league.name} — skipping team upsert`);
     }
 
-    // ── 2. Fixtures ─────────────────────────────────────────────────────────
+    // ── 2. Fixtures (last 60 days only) ─────────────────────────────────────
 
-    const fixturesData = await fetchFootballMatches(league.leagueId, league.season);
+    const fixturesData = await fetchFootballMatches(league.leagueId, league.season, fromDateStr);
 
     if (!fixturesData) {
       console.warn(`No fixture data for ${league.name} — skipping`);
@@ -491,8 +508,8 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
   }
 
   const message = errors === 0
-    ? `Successfully synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records`
-    : `Synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records with ${errors} error(s)`;
+    ? `Successfully synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records (last 60 days)`
+    : `Synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records (last 60 days) with ${errors} error(s)`;
 
   console.log(`Football sync complete — ${message}`);
   return { teams_synced: teamsSynced, matches_synced: matchesSynced, stats_synced: statsSynced, errors, message };

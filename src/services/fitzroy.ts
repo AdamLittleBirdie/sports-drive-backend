@@ -207,6 +207,7 @@ export interface SyncStats {
 
 /**
  * Fetch AFL match data (upstream first, seed fallback) and upsert into Postgres.
+ * Only matches from the last 60 days are inserted; older records are pruned.
  */
 export async function syncFitzroyData(): Promise<SyncStats> {
   let matches = await fetchUpstreamMatches();
@@ -216,6 +217,23 @@ export async function syncFitzroyData(): Promise<SyncStats> {
     console.warn('Upstream Fitzroy data unavailable — using seed dataset');
     matches = SEED_MATCHES;
     usedSeed = true;
+  }
+
+  // Compute the cutoff date (60 days ago) and filter matches to the window
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 60);
+  matches = matches.filter(m => {
+    if (!m.Date) return false;
+    const matchDate = new Date(m.Date);
+    return !isNaN(matchDate.getTime()) && matchDate >= cutoff;
+  });
+
+  // Remove AFL matches older than 60 days before syncing to keep the DB lean
+  try {
+    await sql`DELETE FROM matches WHERE date < NOW() - INTERVAL '60 days'`;
+    console.log('AFL sync: pruned matches older than 60 days');
+  } catch (err) {
+    console.error('AFL sync: failed to prune old matches:', err instanceof Error ? err.message : err);
   }
 
   let synced = 0;
@@ -248,6 +266,6 @@ export async function syncFitzroyData(): Promise<SyncStats> {
     }
   }
 
-  console.log(`Sync complete — synced: ${synced}, errors: ${errors}${usedSeed ? ' (seed data)' : ''}`);
+  console.log(`AFL sync complete (last 60 days) — synced: ${synced}, errors: ${errors}${usedSeed ? ' (seed data)' : ''}`);
   return { synced, errors };
 }
