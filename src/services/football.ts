@@ -200,6 +200,63 @@ export async function fetchFootballMatches(
 }
 
 /**
+ * Fetch all fixtures for a given league and season from API-Football,
+ * without any date filtering. Intended for tournaments like the World Cup
+ * where the full fixture list is needed upfront.
+ * Returns the raw response array, or null on failure.
+ */
+export async function fetchFootballFixtures(
+  leagueId: number,
+  season: number,
+): Promise<ApiFixture[] | null> {
+  try {
+    const res = await footballApi.get<ApiFixturesEnvelope>('/fixtures', {
+      params: { league: leagueId, season },
+    });
+    const data = res.data?.response;
+    if (!Array.isArray(data)) {
+      console.warn(`fetchFootballFixtures: unexpected response for league ${leagueId}`);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error(
+      `fetchFootballFixtures failed (league=${leagueId}, season=${season}):`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
+ * Fetch detailed data for a single fixture by its API-Football fixture ID.
+ * Used to retrieve up-to-date scores and status for in-progress or completed
+ * fixtures without fetching the entire league schedule again.
+ * Returns the fixture object, or null on failure.
+ */
+export async function fetchFootballFixtureById(
+  fixtureId: number,
+): Promise<ApiFixture | null> {
+  try {
+    const res = await footballApi.get<ApiFixturesEnvelope>('/fixtures', {
+      params: { id: fixtureId },
+    });
+    const data = res.data?.response;
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn(`fetchFootballFixtureById: no data for fixture ${fixtureId}`);
+      return null;
+    }
+    return data[0];
+  } catch (err) {
+    console.error(
+      `fetchFootballFixtureById failed (fixture=${fixtureId}):`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
  * Fetch statistics for a single fixture from API-Football.
  * Returns the raw response array, or null on failure.
  */
@@ -388,13 +445,24 @@ async function upsertMatchStats(
 /**
  * Sync all football data (teams, matches, stats) for every configured league.
  *
- * Strategy:
+ * Strategy (standard leagues):
  *  1. Delete matches older than 60 days to keep the database lean.
  *  2. For each league, fetch and upsert teams first so FK references exist.
  *  3. Fetch fixtures from the last 60 days only (via the API `from` param),
  *     resolving team api_id → internal DB id.
  *  4. For completed matches only, fetch and upsert per-team statistics.
  *     (Stats are only available once a match has finished.)
+ *
+ * Strategy (World Cup 2026 — leagueId 1, season 2026):
+ *  1. Fetch the full fixture list for the tournament via fetchFootballFixtures
+ *     (no date filter) and upsert every fixture so the schedule is always complete.
+ *  2. For fixtures that have already begun (status !== "NS" / "TBD"), fetch
+ *     fresh individual fixture details via fetchFootballFixtureById to get the
+ *     latest scores and status without re-downloading the entire schedule.
+ *  3. Fetch and upsert per-team statistics for completed fixtures.
+ *
+ * This two-step approach for the World Cup avoids the rate-limit issues caused
+ * by repeatedly hitting the games endpoint for every fixture.
  */
 export async function syncFootballData(): Promise<FootballSyncResult> {
   let teamsSynced = 0;
@@ -407,16 +475,23 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
   cutoff.setUTCDate(cutoff.getUTCDate() - 60);
   const fromDateStr = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
 
-  // Remove matches older than 60 days before syncing to keep the DB lean
+  // Remove matches older than 60 days before syncing to keep the DB lean.
+  // World Cup fixtures are exempt — they are pruned separately below.
   try {
-    await sql`DELETE FROM football_matches WHERE date < NOW() - INTERVAL '60 days'`;
-    console.log('Football sync: pruned matches older than 60 days');
+    await sql`DELETE FROM football_matches WHERE date < NOW() - INTERVAL '60 days' AND league_id != 1`;
+    console.log('Football sync: pruned non-World-Cup matches older than 60 days');
   } catch (err) {
     console.error('Football sync: failed to prune old matches:', err instanceof Error ? err.message : err);
   }
 
   for (const league of LEAGUES) {
-    console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season}, from=${fromDateStr})…`);
+    const isWorldCup = league.leagueId === 1 && league.season === 2026;
+
+    if (isWorldCup) {
+      console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season}) — using fixtures endpoint…`);
+    } else {
+      console.log(`Syncing ${league.name} (league=${league.leagueId}, season=${league.season}, from=${fromDateStr})…`);
+    }
 
     // ── 1. Teams ────────────────────────────────────────────────────────────
 
@@ -439,17 +514,45 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
       console.warn(`No team data for ${league.name} — skipping team upsert`);
     }
 
-    // ── 2. Fixtures (last 60 days only) ─────────────────────────────────────
+    // ── 2. Fixtures ──────────────────────────────────────────────────────────
+    //
+    // World Cup: fetch the full tournament schedule (no date filter), then
+    // refresh individual fixtures that have already kicked off.
+    //
+    // Other leagues: fetch only the last 60 days to limit API usage.
 
-    const fixturesData = await fetchFootballMatches(league.leagueId, league.season, fromDateStr);
+    let fixturesData: ApiFixture[] | null;
+
+    if (isWorldCup) {
+      // Step 2a — fetch the complete World Cup schedule
+      fixturesData = await fetchFootballFixtures(league.leagueId, league.season);
+    } else {
+      fixturesData = await fetchFootballMatches(league.leagueId, league.season, fromDateStr);
+    }
 
     if (!fixturesData) {
       console.warn(`No fixture data for ${league.name} — skipping`);
       continue;
     }
 
-    for (const fixture of fixturesData) {
+    for (const rawFixture of fixturesData) {
       try {
+        // Step 2b (World Cup only) — for fixtures that have begun, fetch fresh
+        // individual fixture details so scores and status are up to date.
+        let fixture = rawFixture;
+        if (isWorldCup) {
+          const statusShort = rawFixture.fixture.status.short;
+          const hasBegun = statusShort !== 'NS' && statusShort !== 'TBD';
+          if (hasBegun) {
+            const fresh = await fetchFootballFixtureById(rawFixture.fixture.id);
+            if (fresh) {
+              fixture = fresh;
+            } else {
+              console.warn(`fetchFootballFixtureById returned null for fixture ${rawFixture.fixture.id} — using schedule data`);
+            }
+          }
+        }
+
         const transformed = transformFootballMatch(fixture);
 
         // Resolve team api_ids to internal DB ids (may be null if team wasn't fetched)
@@ -499,7 +602,7 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
           }
         }
       } catch (err) {
-        console.error(`Error syncing fixture ${fixture.fixture.id}:`, err instanceof Error ? err.message : err);
+        console.error(`Error syncing fixture ${rawFixture.fixture.id}:`, err instanceof Error ? err.message : err);
         errors++;
       }
     }
@@ -508,8 +611,8 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
   }
 
   const message = errors === 0
-    ? `Successfully synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records (last 60 days)`
-    : `Synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records (last 60 days) with ${errors} error(s)`;
+    ? `Successfully synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records`
+    : `Synced ${teamsSynced} teams, ${matchesSynced} matches, ${statsSynced} stat records with ${errors} error(s)`;
 
   console.log(`Football sync complete — ${message}`);
   return { teams_synced: teamsSynced, matches_synced: matchesSynced, stats_synced: statsSynced, errors, message };
