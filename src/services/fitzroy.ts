@@ -1,7 +1,7 @@
 /**
  * Fitzroy API integration
  *
- * Fetches real-time AFL fixture data from API-Sports (v3.afl.api-sports.io).
+ * Fetches real-time AFL fixture data from API-Sports (v1.afl.api-sports.io).
  * API-Sports provides current and upcoming AFL matches, teams, and scores
  * via a REST API authenticated with an x-apisports-key header.
  *
@@ -139,7 +139,7 @@ interface ApiSportsResponse {
 
 // ── Fetch from upstream ───────────────────────────────────────────────────────
 
-const API_SPORTS_BASE_URL = 'https://v3.afl.api-sports.io';
+const API_SPORTS_BASE_URL = 'https://v1.afl.api-sports.io';
 const API_SPORTS_KEY = '404f293f746d43be3efd5457c97406d1';
 
 /**
