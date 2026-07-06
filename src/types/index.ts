@@ -142,6 +142,75 @@ export interface FootballSyncResult {
   message: string;
 }
 
+// ── Basketball Domain Types ───────────────────────────────────────────────────
+
+export interface BasketballTeam {
+  id: number;
+  api_id: number;
+  name: string;
+  abbreviation: string | null;
+  logo_url: string | null;
+  country: string | null;
+  founded: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BasketballMatch {
+  id: number;
+  api_id: number;
+  league_id: number;
+  league_name: string | null;
+  season: string | null;
+  round: string | null;
+  home_team_id: number | null;
+  away_team_id: number | null;
+  home_team_name: string | null;
+  away_team_name: string | null;
+  date: string | null;
+  home_score: number | null;
+  away_score: number | null;
+  status: string | null;
+  venue: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BasketballMatchStat {
+  id: number;
+  match_id: number | null;
+  team_id: number | null;
+  points: number | null;
+  field_goals_made: number | null;
+  field_goals_attempted: number | null;
+  three_pointers_made: number | null;
+  three_pointers_attempted: number | null;
+  free_throws_made: number | null;
+  free_throws_attempted: number | null;
+  rebounds: number | null;
+  assists: number | null;
+  steals: number | null;
+  blocks: number | null;
+  turnovers: number | null;
+  fouls: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BasketballMatchWithTeams extends BasketballMatch {
+  home_team: BasketballTeam | null;
+  away_team: BasketballTeam | null;
+  stats?: BasketballMatchStat[];
+}
+
+export interface BasketballSyncResult {
+  teams_synced: number;
+  matches_synced: number;
+  stats_synced: number;
+  errors: number;
+  message: string;
+}
+
 // ── Rugby Domain Types ────────────────────────────────────────────────────────
 
 export interface RugbyTeam {

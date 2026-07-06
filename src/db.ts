@@ -144,6 +144,68 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // ── Basketball tables ─────────────────────────────────────────────────────────
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS basketball_teams (
+      id           SERIAL PRIMARY KEY,
+      api_id       INTEGER UNIQUE NOT NULL,
+      name         VARCHAR(255) NOT NULL,
+      abbreviation VARCHAR(10),
+      logo_url     TEXT,
+      country      VARCHAR(100),
+      founded      INTEGER,
+      created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS basketball_matches (
+      id             SERIAL PRIMARY KEY,
+      api_id         INTEGER UNIQUE NOT NULL,
+      league_id      INTEGER NOT NULL,
+      league_name    VARCHAR(255),
+      season         VARCHAR(50),
+      round          VARCHAR(100),
+      home_team_id   INTEGER REFERENCES basketball_teams(id),
+      away_team_id   INTEGER REFERENCES basketball_teams(id),
+      home_team_name VARCHAR(255),
+      away_team_name VARCHAR(255),
+      date           TIMESTAMP,
+      home_score     INTEGER,
+      away_score     INTEGER,
+      status         VARCHAR(50),
+      venue          VARCHAR(255),
+      created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS basketball_match_stats (
+      id                      SERIAL PRIMARY KEY,
+      match_id                INTEGER REFERENCES basketball_matches(id),
+      team_id                 INTEGER REFERENCES basketball_teams(id),
+      points                  INTEGER,
+      field_goals_made        INTEGER,
+      field_goals_attempted   INTEGER,
+      three_pointers_made     INTEGER,
+      three_pointers_attempted INTEGER,
+      free_throws_made        INTEGER,
+      free_throws_attempted   INTEGER,
+      rebounds                INTEGER,
+      assists                 INTEGER,
+      steals                  INTEGER,
+      blocks                  INTEGER,
+      turnovers               INTEGER,
+      fouls                   INTEGER,
+      created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (match_id, team_id)
+    )
+  `;
+
   // ── Rugby tables ─────────────────────────────────────────────────────────────
 
   await sql`
