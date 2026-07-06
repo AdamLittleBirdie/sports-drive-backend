@@ -221,7 +221,7 @@ export async function syncFitzroyData(): Promise<SyncStats> {
 
   // Compute the cutoff date (60 days ago) and filter matches to the window
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 60);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 60);
   matches = matches.filter(m => {
     if (!m.Date) return false;
     const matchDate = new Date(m.Date);

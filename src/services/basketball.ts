@@ -423,7 +423,7 @@ export async function syncBasketballData(): Promise<BasketballSyncResult> {
 
   // Compute the cutoff timestamp (60 days ago) once for the whole sync run
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 60);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 60);
 
   // Remove matches older than 60 days before syncing to keep the DB lean
   try {
