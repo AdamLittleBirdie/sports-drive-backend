@@ -474,6 +474,7 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - 60);
   const fromDateStr = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  console.log(`Football sync cutoff: ${cutoff.toISOString()}`);
 
   // Remove matches older than 60 days before syncing to keep the DB lean.
   // World Cup fixtures are exempt — they are pruned separately below.
@@ -535,6 +536,8 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
       continue;
     }
 
+    console.log(`Fetched ${fixturesData.length} fixtures from API for ${league.name}`);
+
     for (const rawFixture of fixturesData) {
       try {
         // Step 2b (World Cup only) — for fixtures that have begun, fetch fresh
@@ -553,7 +556,9 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
           }
         }
 
+        console.log(`Fixture ${fixture.fixture.id}: date=${fixture.fixture.date}, status=${fixture.fixture.status.short}`);
         const transformed = transformFootballMatch(fixture);
+        console.log(`Transformed fixture ${transformed.api_id}: date=${transformed.date?.toISOString() ?? 'null'}, cutoff=${cutoff.toISOString()}, include=${transformed.date === null || transformed.date >= cutoff}`);
 
         // Resolve team api_ids to internal DB ids (may be null if team wasn't fetched)
         let homeDbId = teamIdMap.get(fixture.teams.home.id) ?? null;
