@@ -50,7 +50,7 @@ export async function connectivityRoutes(app: FastifyInstance): Promise<void> {
 
     // Test 3: API-Sports AFL endpoint
     try {
-      const response = await axios.get('https://v3.afl.api-sports.io/fixtures', {
+      const response = await axios.get('https://v1.afl.api-sports.io/games', {
         headers: {
           'x-apisports-key': API_SPORTS_KEY,
         },
@@ -60,7 +60,7 @@ export async function connectivityRoutes(app: FastifyInstance): Promise<void> {
         status: 'success',
         statusCode: response.status,
         message: 'API-Sports is reachable',
-        fixturesCount: Array.isArray(response.data?.response)
+        gamesCount: Array.isArray(response.data?.response)
           ? response.data.response.length
           : 0,
       };
