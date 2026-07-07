@@ -479,6 +479,11 @@ export async function syncFootballData(): Promise<FootballSyncResult> {
   // Remove matches older than 60 days before syncing to keep the DB lean.
   // World Cup fixtures are exempt — they are pruned separately below.
   try {
+    // Delete stats first to avoid foreign key constraint
+    await sql`DELETE FROM football_match_stats WHERE match_id IN (
+      SELECT id FROM football_matches WHERE date < NOW() - INTERVAL '60 days' AND league_id != 1
+    )`;
+    // Then delete matches
     await sql`DELETE FROM football_matches WHERE date < NOW() - INTERVAL '60 days' AND league_id != 1`;
     console.log('Football sync: pruned non-World-Cup matches older than 60 days');
   } catch (err) {

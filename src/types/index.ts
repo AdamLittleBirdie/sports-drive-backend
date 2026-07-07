@@ -57,6 +57,20 @@ export interface MatchWithTeams extends Match {
   away_team: Team;
 }
 
+export interface AllMatch {
+  id: number;
+  round: string | null;
+  home_team_id: number | null;
+  away_team_id: number | null;
+  date: string | null;
+  home_score: number | null;
+  away_score: number | null;
+  status: string | null;
+  home_team: Team | FootballTeam | BasketballTeam | null;
+  away_team: Team | FootballTeam | BasketballTeam | null;
+  sport: 'AFL' | 'Football' | 'Basketball';
+}
+
 export interface TeamWithPlayers extends Team {
   players: Player[];
 }
