@@ -88,7 +88,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Reply: ApiResponse<AllMatch[]> }>('/api/all-matches', async (_req, reply) => {
     try {
       // Fetch AFL matches
-      const aflMatches = await sql<Match[]>`
+      const aflMatches = await sql<AllMatch[]>`
         SELECT 
           m.id, m.round, m.home_team_id, m.away_team_id, m.date, 
           m.home_score, m.away_score, m.status,
@@ -102,7 +102,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
       `;
 
       // Fetch Football matches (Premier League, La Liga, Champions League, World Cup)
-      const footballMatches = await sql<Match[]>`
+      const footballMatches = await sql<AllMatch[]>`
         SELECT 
           fm.id, fm.round, fm.home_team_id, fm.away_team_id, fm.date,
           fm.home_score, fm.away_score, fm.status,
@@ -116,7 +116,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
       `;
 
       // Fetch Basketball matches (NBA)
-      const basketballMatches = await sql<Match[]>`
+      const basketballMatches = await sql<AllMatch[]>`
         SELECT 
           bm.id, bm.round, bm.home_team_id, bm.away_team_id, bm.game_date AS date,
           bm.home_score, bm.away_score, bm.status,
