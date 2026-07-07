@@ -118,7 +118,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
       // Fetch Basketball matches (NBA)
       const basketballMatches = await sql<AllMatch[]>`
         SELECT 
-          bm.id, bm.round, bm.home_team_id, bm.away_team_id, bm.game_date AS date,
+          bm.id, bm.round, bm.home_team_id, bm.away_team_id, bm.date,
           bm.home_score, bm.away_score, bm.status,
           row_to_json(bt.*) AS home_team,
           row_to_json(at.*) AS away_team,
@@ -126,7 +126,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
         FROM basketball_matches bm
         LEFT JOIN basketball_teams bt ON bt.id = bm.home_team_id
         LEFT JOIN basketball_teams at ON at.id = bm.away_team_id
-        ORDER BY bm.game_date DESC NULLS LAST
+        ORDER BY bm.date DESC NULLS LAST
       `;
 
       // Combine and sort by date (most recent first)
