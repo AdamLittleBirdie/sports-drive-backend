@@ -42,8 +42,8 @@ export async function initDb(): Promise<void> {
       home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
       away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
       date         TIMESTAMPTZ,
-      home_score   INTEGER,
-      away_score   INTEGER,
+      home_score   JSONB,
+      away_score   JSONB,
       status       TEXT NOT NULL DEFAULT 'scheduled'
         CHECK (status IN ('scheduled', 'in_progress', 'completed'))
     )
