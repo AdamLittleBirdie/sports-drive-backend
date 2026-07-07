@@ -4,9 +4,6 @@
  * Fetches real-time AFL fixture data from API-Sports (v1.afl.api-sports.io).
  * API-Sports provides current and upcoming AFL matches, teams, and scores
  * via a REST API authenticated with an x-apisports-key header.
- *
- * Falls back to a curated static dataset when the upstream is unavailable
- * so the service always starts cleanly.
  */
 
 import axios from 'axios';
@@ -21,6 +18,10 @@ interface FitzroyMatch {
   'Away.Team': string;
   'Home.Points': number | null;
   'Away.Points': number | null;
+  'Home.Goals': number | null;
+  'Home.Behinds': number | null;
+  'Away.Goals': number | null;
+  'Away.Behinds': number | null;
   Season: number;
   /** Pre-resolved status from the upstream API, if available. */
   Status?: 'scheduled' | 'in_progress' | 'completed';
@@ -87,54 +88,43 @@ function matchStatus(
   return 'scheduled';
 }
 
-// ── Seed data (used when upstream is unavailable) ─────────────────────────────
-
-const SEED_MATCHES: FitzroyMatch[] = [
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-07', 'Home.Team': 'Carlton', 'Away.Team': 'Richmond', 'Home.Points': 87, 'Away.Points': 62 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-08', 'Home.Team': 'Collingwood', 'Away.Team': 'Melbourne', 'Home.Points': 101, 'Away.Points': 78 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-08', 'Home.Team': 'Geelong', 'Away.Team': 'Hawthorn', 'Home.Points': 95, 'Away.Points': 84 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-09', 'Home.Team': 'Sydney', 'Away.Team': 'Essendon', 'Home.Points': 110, 'Away.Points': 73 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-09', 'Home.Team': 'Brisbane Lions', 'Away.Team': 'Gold Coast', 'Home.Points': 88, 'Away.Points': 65 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-09', 'Home.Team': 'Fremantle', 'Away.Team': 'West Coast', 'Home.Points': 92, 'Away.Points': 71 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-10', 'Home.Team': 'Port Adelaide', 'Away.Team': 'Adelaide', 'Home.Points': 79, 'Away.Points': 68 },
-  { Season: 2024, Round: 'Round 1', Date: '2024-03-10', 'Home.Team': 'Greater Western Sydney', 'Away.Team': 'North Melbourne', 'Home.Points': 105, 'Away.Points': 54 },
-  { Season: 2024, Round: 'Round 2', Date: '2024-03-14', 'Home.Team': 'Richmond', 'Away.Team': 'Collingwood', 'Home.Points': 74, 'Away.Points': 98 },
-  { Season: 2024, Round: 'Round 2', Date: '2024-03-15', 'Home.Team': 'Melbourne', 'Away.Team': 'Carlton', 'Home.Points': 83, 'Away.Points': 91 },
-  { Season: 2024, Round: 'Round 2', Date: '2024-03-16', 'Home.Team': 'Hawthorn', 'Away.Team': 'Sydney', 'Home.Points': 77, 'Away.Points': 102 },
-  { Season: 2024, Round: 'Round 2', Date: '2024-03-16', 'Home.Team': 'Essendon', 'Away.Team': 'Geelong', 'Home.Points': 69, 'Away.Points': 88 },
-  { Season: 2024, Round: 'Round 3', Date: '2024-03-21', 'Home.Team': 'Carlton', 'Away.Team': 'Collingwood', 'Home.Points': null, 'Away.Points': null },
-  { Season: 2024, Round: 'Round 3', Date: '2024-03-22', 'Home.Team': 'Richmond', 'Away.Team': 'Melbourne', 'Home.Points': null, 'Away.Points': null },
-];
-
 // ── API-Sports response types ─────────────────────────────────────────────────
 
-interface ApiSportsFixture {
-  fixture: {
+interface ApiSportsGame {
+  game: {
     id: number;
-    date: string;
-    status: {
-      short: string;
-      long: string;
-    };
   };
   league: {
     id: number;
     name: string;
     season: number;
-    round: string | null;
+  };
+  date: string;
+  round: string;
+  status: {
+    short: string;
+    long: string;
   };
   teams: {
     home: { id: number; name: string };
     away: { id: number; name: string };
   };
-  goals: {
-    home: number | null;
-    away: number | null;
+  scores: {
+    home: {
+      score: number;
+      goals: number;
+      behinds: number;
+    };
+    away: {
+      score: number;
+      goals: number;
+      behinds: number;
+    };
   };
 }
 
-interface ApiSportsResponse {
-  response: ApiSportsFixture[];
+interface ApiSportsGamesResponse {
+  response: ApiSportsGame[];
 }
 
 // ── Fetch from upstream ───────────────────────────────────────────────────────
@@ -153,48 +143,54 @@ function apiSportsStatus(short: string): 'scheduled' | 'in_progress' | 'complete
 
 /**
  * Attempt to fetch match data from the API-Sports AFL API.
- * Returns null if the request fails so callers can fall back to seed data.
+ * Returns an empty array if the request fails.
  */
-async function fetchUpstreamMatches(): Promise<FitzroyMatch[] | null> {
+async function fetchUpstreamMatches(): Promise<FitzroyMatch[]> {
   try {
-    const response = await axios.get<ApiSportsResponse>(`${API_SPORTS_BASE_URL}/fixtures`, {
-      headers: {
-        'x-apisports-key': API_SPORTS_KEY,
+    const response = await axios.get<ApiSportsGamesResponse>(
+      `${API_SPORTS_BASE_URL}/games?league=1&season=2026`,
+      {
+        headers: {
+          'x-apisports-key': API_SPORTS_KEY,
+        },
+        timeout: 10000,
       },
-      timeout: 10000,
-    });
+    );
 
-    const fixtures = response.data?.response;
-    if (!Array.isArray(fixtures) || fixtures.length === 0) {
-      console.warn('API-Sports returned empty fixtures list');
-      return null;
+    const games = response.data?.response;
+    if (!Array.isArray(games) || games.length === 0) {
+      console.warn('API-Sports returned empty games list');
+      return [];
     }
 
-    return fixtures.map((f): FitzroyMatch => {
-      const season = f.league?.season ?? new Date(f.fixture.date).getFullYear();
+    return games.map((g): FitzroyMatch => {
+      const season = g.league?.season ?? new Date(g.date).getFullYear();
       // API-Sports provides round as e.g. "Round - 5"; normalise to "Round 5"
-      const rawRound = f.league?.round ?? '';
+      const rawRound = g.round ?? '';
       const round = rawRound
         ? rawRound.replace(/^Round\s*-\s*/i, 'Round ').trim()
         : 'Round 1';
 
-      const homePoints = f.goals?.home != null ? f.goals.home * 6 : null;
-      const awayPoints = f.goals?.away != null ? f.goals.away * 6 : null;
+      const hasScores = g.scores?.home?.score != null && g.scores?.away?.score != null;
 
       return {
         Round: round,
-        Date: f.fixture.date,
-        'Home.Team': f.teams.home.name,
-        'Away.Team': f.teams.away.name,
-        'Home.Points': homePoints,
-        'Away.Points': awayPoints,
+        Date: g.date,
+        'Home.Team': g.teams.home.name,
+        'Away.Team': g.teams.away.name,
+        'Home.Points': hasScores ? g.scores.home.score : null,
+        'Away.Points': hasScores ? g.scores.away.score : null,
+        'Home.Goals': hasScores ? g.scores.home.goals : null,
+        'Home.Behinds': hasScores ? g.scores.home.behinds : null,
+        'Away.Goals': hasScores ? g.scores.away.goals : null,
+        'Away.Behinds': hasScores ? g.scores.away.behinds : null,
         Season: season,
-        Status: apiSportsStatus(f.fixture.status.short),
+        Status: apiSportsStatus(g.status.short),
       };
     });
   } catch (err) {
     console.error('Failed to fetch from API-Sports:', err instanceof Error ? err.message : err);
-    return null;
+    return [];
   }
 }
 
@@ -206,18 +202,11 @@ export interface SyncStats {
 }
 
 /**
- * Fetch AFL match data (upstream first, seed fallback) and upsert into Postgres.
+ * Fetch AFL match data from upstream and upsert into Postgres.
  * Only matches from the last 60 days are inserted; older records are pruned.
  */
 export async function syncFitzroyData(): Promise<SyncStats> {
   let matches = await fetchUpstreamMatches();
-  let usedSeed = false;
-
-  if (!matches) {
-    console.warn('Upstream Fitzroy data unavailable — using seed dataset');
-    matches = SEED_MATCHES;
-    usedSeed = true;
-  }
 
   // Compute the cutoff date (60 days ago) and filter matches to the window
   const cutoff = new Date();
@@ -246,6 +235,17 @@ export async function syncFitzroyData(): Promise<SyncStats> {
 
       const status = m.Status ?? matchStatus(m['Home.Points'], m['Away.Points'], m.Date);
 
+      const homeScoreJson = {
+        points: m['Home.Points'] ?? 0,
+        goals: m['Home.Goals'] ?? 0,
+        behinds: m['Home.Behinds'] ?? 0,
+      };
+      const awayScoreJson = {
+        points: m['Away.Points'] ?? 0,
+        goals: m['Away.Goals'] ?? 0,
+        behinds: m['Away.Behinds'] ?? 0,
+      };
+
       await sql`
         INSERT INTO matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
         VALUES (
@@ -253,8 +253,8 @@ export async function syncFitzroyData(): Promise<SyncStats> {
           ${homeId},
           ${awayId},
           ${m.Date ? new Date(m.Date) : null},
-          ${m['Home.Points'] ?? null},
-          ${m['Away.Points'] ?? null},
+          ${JSON.stringify(homeScoreJson)},
+          ${JSON.stringify(awayScoreJson)},
           ${status}
         )
         ON CONFLICT DO NOTHING
@@ -266,6 +266,6 @@ export async function syncFitzroyData(): Promise<SyncStats> {
     }
   }
 
-  console.log(`AFL sync complete (last 60 days) — synced: ${synced}, errors: ${errors}${usedSeed ? ' (seed data)' : ''}`);
+  console.log(`AFL sync complete (last 60 days) — synced: ${synced}, errors: ${errors}`);
   return { synced, errors };
 }
