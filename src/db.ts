@@ -49,6 +49,19 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // Alter existing matches table to support JSON scores (for AFL)
+  try {
+    await sql`
+      ALTER TABLE matches
+      ALTER COLUMN home_score TYPE JSONB USING home_score::text::jsonb,
+      ALTER COLUMN away_score TYPE JSONB USING away_score::text::jsonb
+    `;
+    console.log('Converted matches.home_score and matches.away_score to JSONB');
+  } catch (err) {
+    // If columns are already JSONB or table doesn't exist, this is fine
+    console.log('Matches table already has JSONB scores or does not exist yet');
+  }
+
   await sql`
     CREATE TABLE IF NOT EXISTS match_stats (
       id         SERIAL PRIMARY KEY,
