@@ -84,4 +84,71 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  // ── GET /api/debug/recent-matches ──────────────────────────────────────────
+
+  /**
+   * Returns the most recent completed match for each sport.
+   * Useful for debugging data sync issues.
+   */
+  app.get<{ Reply: ApiResponse<any> }>('/api/debug/recent-matches', async (_req, reply) => {
+    try {
+      // Most recent completed AFL match
+      const [aflMatch] = await sql`
+        SELECT 
+          'AFL' as sport,
+          m.id, m.round, m.date, m.status,
+          ht.name as home_team, at.name as away_team,
+          m.home_score, m.away_score
+        FROM matches m
+        LEFT JOIN teams ht ON ht.id = m.home_team_id
+        LEFT JOIN teams at ON at.id = m.away_team_id
+        WHERE m.status = 'completed'
+        ORDER BY m.date DESC
+        LIMIT 1
+      `;
+
+      // Most recent completed World Cup match
+      const [worldCupMatch] = await sql`
+        SELECT 
+          'World Cup' as sport,
+          fm.id, fm.round, fm.date, fm.status,
+          ft.name as home_team, at.name as away_team,
+          fm.home_score, fm.away_score
+        FROM football_matches fm
+        LEFT JOIN football_teams ft ON ft.id = fm.home_team_id
+        LEFT JOIN football_teams at ON at.id = fm.away_team_id
+        WHERE fm.league_id = 1 AND fm.status = 'completed'
+        ORDER BY fm.date DESC
+        LIMIT 1
+      `;
+
+      // Most recent completed NBA match
+      const [nbaMatch] = await sql`
+        SELECT 
+          'NBA' as sport,
+          bm.id, bm.round, bm.date, bm.status,
+          bt.name as home_team, at.name as away_team,
+          bm.home_score, bm.away_score
+        FROM basketball_matches bm
+        LEFT JOIN basketball_teams bt ON bt.id = bm.home_team_id
+        LEFT JOIN basketball_teams at ON at.id = bm.away_team_id
+        WHERE bm.status = 'completed'
+        ORDER BY bm.date DESC
+        LIMIT 1
+      `;
+
+      const data = {
+        afl: aflMatch || null,
+        world_cup: worldCupMatch || null,
+        nba: nbaMatch || null,
+        queried_at: new Date().toISOString(),
+      };
+
+      return reply.code(200).send({ statusCode: 200, data });
+    } catch (err) {
+      app.log.error(err);
+      return reply.code(500).send({ statusCode: 500, error: 'Failed to fetch recent matches' });
+    }
+  });
 }
