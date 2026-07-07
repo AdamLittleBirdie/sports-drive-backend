@@ -38,6 +38,12 @@ export interface Match {
   status: 'scheduled' | 'in_progress' | 'completed';
 }
 
+export interface AflScore {
+  goals: number;
+  behinds: number;
+  total: number;
+}
+
 export interface MatchStat {
   id: number;
   match_id: number;
@@ -52,7 +58,9 @@ export interface MatchStat {
   hit_outs: number | null;
 }
 
-export interface MatchWithTeams extends Match {
+export interface MatchWithTeams extends Omit<Match, 'home_score' | 'away_score'> {
+  home_score: number | AflScore;
+  away_score: number | AflScore;
   home_team: Team;
   away_team: Team;
 }
