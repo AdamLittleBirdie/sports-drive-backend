@@ -57,17 +57,23 @@ export interface MatchWithTeams extends Match {
   away_team: Team;
 }
 
+export interface AflScore {
+  points: number;
+  goals: number;
+  behinds: number;
+}
+
 export interface AllMatch {
   id: number;
-  round: string | null;
-  home_team_id: number | null;
-  away_team_id: number | null;
+  round: string;
+  home_team_id: number;
+  away_team_id: number;
   date: string | null;
-  home_score: number | null;
-  away_score: number | null;
-  status: string | null;
-  home_team: Team | FootballTeam | BasketballTeam | null;
-  away_team: Team | FootballTeam | BasketballTeam | null;
+  home_score: number | AflScore;
+  away_score: number | AflScore;
+  status: string;
+  home_team: any;
+  away_team: any;
   sport: 'AFL' | 'Football' | 'Basketball';
 }
 
