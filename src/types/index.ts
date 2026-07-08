@@ -239,6 +239,17 @@ export interface BasketballSyncResult {
   message: string;
 }
 
+// ── World Cup Domain Types ────────────────────────────────────────────────────
+
+export interface WorldCupSyncResult {
+  teams_synced: number;
+  matches_synced: number;
+  stats_synced: number;
+  synced: number;
+  errors: number;
+  message: string;
+}
+
 // ── Rugby Domain Types ────────────────────────────────────────────────────────
 
 export interface RugbyTeam {
