@@ -308,5 +308,23 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // ── World Cup tables ──────────────────────────────────────────────────────────
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS match_events (
+      id          SERIAL PRIMARY KEY,
+      match_id    INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+      type        VARCHAR(50),
+      player      VARCHAR(255),
+      team        VARCHAR(255),
+      elapsed     INTEGER,
+      extra       INTEGER,
+      detail      TEXT,
+      comments    TEXT,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (match_id, type, player, elapsed, extra)
+    )
+  `;
+
   console.log('Database schema initialised');
 }
