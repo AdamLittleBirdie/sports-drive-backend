@@ -5,7 +5,7 @@ import type { Match, MatchWithTeams, MatchStat, AllMatch, ApiResponse } from '..
 export async function matchRoutes(app: FastifyInstance): Promise<void> {
   /**
    * GET /api/matches
-   * Returns all matches with home/away team names joined in.
+   * Returns all AFL matches with home/away team names joined in.
    */
   app.get<{ Reply: ApiResponse<MatchWithTeams[]> }>('/api/matches', async (_req, reply) => {
     try {
@@ -21,7 +21,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
           m.status,
           row_to_json(ht.*) AS home_team,
           row_to_json(at.*) AS away_team
-        FROM matches m
+        FROM afl_matches m
         LEFT JOIN teams ht ON ht.id = m.home_team_id
         LEFT JOIN teams at ON at.id = m.away_team_id
         ORDER BY m.date ASC NULLS LAST, m.id ASC
@@ -58,7 +58,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
             m.status,
             row_to_json(ht.*) AS home_team,
             row_to_json(at.*) AS away_team
-          FROM matches m
+          FROM afl_matches m
           LEFT JOIN teams ht ON ht.id = m.home_team_id
           LEFT JOIN teams at ON at.id = m.away_team_id
           WHERE m.id = ${id}
