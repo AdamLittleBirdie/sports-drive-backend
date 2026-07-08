@@ -51,44 +51,6 @@ export async function initDb(): Promise<void> {
   `;
 
   await sql`
-    CREATE TABLE IF NOT EXISTS matches (
-      id           SERIAL PRIMARY KEY,
-      round        TEXT NOT NULL,
-      home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      date         TIMESTAMPTZ,
-      home_score   JSONB,
-      away_score   JSONB,
-      home_winner  BOOLEAN,
-      status       TEXT NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'in_progress', 'completed'))
-    )
-  `;
-
-  // Alter existing matches table to support JSON scores (for AFL)
-  try {
-    await sql`
-      ALTER TABLE matches
-      ALTER COLUMN home_score TYPE JSONB USING home_score::text::jsonb,
-      ALTER COLUMN away_score TYPE JSONB USING away_score::text::jsonb
-    `;
-    console.log('Converted matches.home_score and matches.away_score to JSONB');
-  } catch (err) {
-    // If columns are already JSONB or table doesn't exist, this is fine
-    console.log('Matches table already has JSONB scores or does not exist yet');
-  }
-
-  try {
-    await sql`
-      ALTER TABLE matches
-      ADD COLUMN home_winner BOOLEAN
-    `;
-    console.log('Added home_winner column to matches table');
-  } catch (err) {
-    console.log('home_winner column already exists or table does not exist');
-  }
-
-  await sql`
     CREATE TABLE IF NOT EXISTS match_stats (
       id         SERIAL PRIMARY KEY,
       match_id   INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
