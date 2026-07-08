@@ -103,7 +103,7 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
         FROM matches m
         LEFT JOIN teams ht ON ht.id = m.home_team_id
         LEFT JOIN teams at ON at.id = m.away_team_id
-        WHERE m.status = 'completed'
+        WHERE m.status = 'completed' AND m.round = 'Regular Season'
         ORDER BY m.date DESC
         LIMIT 1
       `;
@@ -112,14 +112,14 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
       const [worldCupMatch] = await sql`
         SELECT 
           'World Cup' as sport,
-          fm.id, fm.round, fm.date, fm.status,
-          ft.name as home_team, at.name as away_team,
-          fm.home_score, fm.away_score
-        FROM football_matches fm
-        LEFT JOIN football_teams ft ON ft.id = fm.home_team_id
-        LEFT JOIN football_teams at ON at.id = fm.away_team_id
-        WHERE fm.league_id = 1 AND fm.status = 'completed'
-        ORDER BY fm.date DESC
+          m.id, m.round, m.date, m.status,
+          ht.name as home_team, at.name as away_team,
+          m.home_score, m.away_score
+        FROM matches m
+        LEFT JOIN teams ht ON ht.id = m.home_team_id
+        LEFT JOIN teams at ON at.id = m.away_team_id
+        WHERE m.status = 'completed' AND m.round != 'Regular Season'
+        ORDER BY m.date DESC
         LIMIT 1
       `;
 
