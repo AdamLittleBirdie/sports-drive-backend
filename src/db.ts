@@ -205,6 +205,21 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS world_cup_matches (
+      id           SERIAL PRIMARY KEY,
+      round        TEXT NOT NULL,
+      home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      date         TIMESTAMPTZ,
+      home_score   JSONB,
+      away_score   JSONB,
+      home_winner  BOOLEAN,
+      status       TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled', 'in_progress', 'completed'))
+    )
+  `;
+
   // ── Basketball tables ─────────────────────────────────────────────────────────
 
   await sql`
