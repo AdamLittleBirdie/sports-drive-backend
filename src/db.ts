@@ -373,5 +373,36 @@ export async function initDb(): Promise<void> {
     console.log('AFL migration skipped or already completed:', err instanceof Error ? err.message : err);
   }
 
+  // ── World Cup tables ──────────────────────────────────────────────────────────
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS world_cup_matches (
+      id           SERIAL PRIMARY KEY,
+      round        TEXT NOT NULL,
+      home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      date         TIMESTAMPTZ,
+      home_score   JSONB,
+      away_score   JSONB,
+      home_winner  BOOLEAN,
+      status       TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled', 'in_progress', 'completed'))
+    )
+  `;
+
+  // Migrate World Cup data from matches to world_cup_matches
+  try {
+    const migratedCount = await sql`
+      INSERT INTO world_cup_matches (id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status)
+      SELECT id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status
+      FROM matches
+      WHERE round != 'Regular Season'
+      ON CONFLICT (id) DO NOTHING
+    `;
+    console.log('Migrated World Cup data from matches to world_cup_matches');
+  } catch (err) {
+    console.log('World Cup migration skipped or already completed:', err instanceof Error ? err.message : err);
+  }
+
   console.log('Database schema initialised');
 }
