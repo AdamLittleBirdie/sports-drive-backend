@@ -26,21 +26,6 @@ export async function initDb(): Promise<void> {
   `;
 
   await sql`
-    CREATE TABLE IF NOT EXISTS afl_matches (
-      id           SERIAL PRIMARY KEY,
-      round        TEXT NOT NULL,
-      home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      date         TIMESTAMPTZ,
-      home_score   JSONB,
-      away_score   JSONB,
-      home_winner  BOOLEAN,
-      status       TEXT NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'in_progress', 'completed'))
-    )
-  `;
-
-  await sql`
     CREATE TABLE IF NOT EXISTS players (
       id       SERIAL PRIMARY KEY,
       name     TEXT NOT NULL,
@@ -164,21 +149,6 @@ export async function initDb(): Promise<void> {
       created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (match_id, team_id)
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS world_cup_matches (
-      id           SERIAL PRIMARY KEY,
-      round        TEXT NOT NULL,
-      home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      date         TIMESTAMPTZ,
-      home_score   JSONB,
-      away_score   JSONB,
-      home_winner  BOOLEAN,
-      status       TEXT NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'in_progress', 'completed'))
     )
   `;
 
@@ -364,58 +334,6 @@ export async function initDb(): Promise<void> {
     console.log('Migrated World Cup data from matches to world_cup_matches');
   } catch (err) {
     console.log('World Cup migration skipped or already completed:', err instanceof Error ? err.message : err);
-  }
-
-  // ── Cleanup: Remove duplicates and drop generic matches table ────────────────
-
-  // Truncate sport-specific tables to remove duplicates from multiple migration runs
-  try {
-    await sql`TRUNCATE TABLE afl_matches RESTART IDENTITY CASCADE`;
-    console.log('Truncated afl_matches');
-  } catch (err) {
-    console.log('Failed to truncate afl_matches:', err instanceof Error ? err.message : err);
-  }
-
-  try {
-    await sql`TRUNCATE TABLE world_cup_matches RESTART IDENTITY CASCADE`;
-    console.log('Truncated world_cup_matches');
-  } catch (err) {
-    console.log('Failed to truncate world_cup_matches:', err instanceof Error ? err.message : err);
-  }
-
-  // Re-run migrations fresh from the generic matches table
-  try {
-    await sql`
-      INSERT INTO afl_matches (id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status)
-      SELECT id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status
-      FROM matches
-      WHERE round = 'Regular Season'
-      ON CONFLICT (id) DO NOTHING
-    `;
-    console.log('Re-migrated AFL data from matches to afl_matches');
-  } catch (err) {
-    console.log('AFL re-migration failed:', err instanceof Error ? err.message : err);
-  }
-
-  try {
-    await sql`
-      INSERT INTO world_cup_matches (id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status)
-      SELECT id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status
-      FROM matches
-      WHERE round != 'Regular Season'
-      ON CONFLICT (id) DO NOTHING
-    `;
-    console.log('Re-migrated World Cup data from matches to world_cup_matches');
-  } catch (err) {
-    console.log('World Cup re-migration failed:', err instanceof Error ? err.message : err);
-  }
-
-  // Drop the generic matches table
-  try {
-    await sql`DROP TABLE IF EXISTS matches CASCADE`;
-    console.log('Dropped generic matches table');
-  } catch (err) {
-    console.log('Failed to drop matches table:', err instanceof Error ? err.message : err);
   }
 
   console.log('Database schema initialised');
