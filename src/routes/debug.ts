@@ -177,9 +177,15 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
         SELECT COUNT(*)::text AS count FROM basketball_matches
       `;
 
-      const [matchesCount] = await sql<[{ count: string }]>`
-        SELECT COUNT(*)::text AS count FROM matches
-      `;
+      let matchesCount = { count: '0' };
+      try {
+        [matchesCount] = await sql<[{ count: string }]>`
+          SELECT COUNT(*)::text AS count FROM matches
+        `;
+      } catch (err) {
+        // matches table doesn't exist (was dropped), that's fine
+        console.log('matches table does not exist (expected after cleanup)');
+      }
 
       const data = {
         afl_matches: parseInt(aflCount.count, 10),
