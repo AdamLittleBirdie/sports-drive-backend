@@ -100,10 +100,10 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
           m.id, m.round, m.date, m.status,
           ht.name as home_team, at.name as away_team,
           m.home_score, m.away_score
-        FROM matches m
+        FROM afl_matches m
         LEFT JOIN teams ht ON ht.id = m.home_team_id
         LEFT JOIN teams at ON at.id = m.away_team_id
-        WHERE m.status = 'completed' AND m.round = 'Regular Season'
+        WHERE m.status = 'completed'
         ORDER BY m.date DESC
         LIMIT 1
       `;
@@ -115,10 +115,10 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
           m.id, m.round, m.date, m.status,
           ht.name as home_team, at.name as away_team,
           m.home_score, m.away_score
-        FROM matches m
+        FROM world_cup_matches m
         LEFT JOIN teams ht ON ht.id = m.home_team_id
         LEFT JOIN teams at ON at.id = m.away_team_id
-        WHERE m.status = 'completed' AND m.round != 'Regular Season'
+        WHERE m.status = 'completed'
         ORDER BY m.date DESC
         LIMIT 1
       `;
