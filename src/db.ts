@@ -94,17 +94,21 @@ export async function initDb(): Promise<void> {
     CREATE TABLE IF NOT EXISTS match_events (
       id           SERIAL PRIMARY KEY,
       match_id     INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-      event_type   TEXT NOT NULL,
+      type         VARCHAR(50),
+      event_type   TEXT,
       team_id      INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      team         VARCHAR(255),
       player_id    INTEGER,
       player_name  TEXT,
+      player       VARCHAR(255),
       assist_id    INTEGER,
       assist_name  TEXT,
       elapsed      INTEGER,
       extra        INTEGER,
       detail       TEXT,
       comments     TEXT,
-      created_at   TIMESTAMPTZ DEFAULT NOW()
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (match_id, type, player, elapsed, extra)
     )
   `;
 
@@ -305,24 +309,6 @@ export async function initDb(): Promise<void> {
       created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (match_id, team_id)
-    )
-  `;
-
-  // ── World Cup tables ──────────────────────────────────────────────────────────
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS match_events (
-      id          SERIAL PRIMARY KEY,
-      match_id    INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-      type        VARCHAR(50),
-      player      VARCHAR(255),
-      team        VARCHAR(255),
-      elapsed     INTEGER,
-      extra       INTEGER,
-      detail      TEXT,
-      comments    TEXT,
-      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (match_id, type, player, elapsed, extra)
     )
   `;
 
