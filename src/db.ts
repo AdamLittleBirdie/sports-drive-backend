@@ -44,6 +44,7 @@ export async function initDb(): Promise<void> {
       date         TIMESTAMPTZ,
       home_score   JSONB,
       away_score   JSONB,
+      home_winner  BOOLEAN,
       status       TEXT NOT NULL DEFAULT 'scheduled'
         CHECK (status IN ('scheduled', 'in_progress', 'completed'))
     )
@@ -60,6 +61,16 @@ export async function initDb(): Promise<void> {
   } catch (err) {
     // If columns are already JSONB or table doesn't exist, this is fine
     console.log('Matches table already has JSONB scores or does not exist yet');
+  }
+
+  try {
+    await sql`
+      ALTER TABLE matches
+      ADD COLUMN home_winner BOOLEAN
+    `;
+    console.log('Added home_winner column to matches table');
+  } catch (err) {
+    console.log('home_winner column already exists or table does not exist');
   }
 
   await sql`
