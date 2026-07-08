@@ -79,6 +79,24 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS match_events (
+      id           SERIAL PRIMARY KEY,
+      match_id     INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+      event_type   TEXT NOT NULL,
+      team_id      INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      player_id    INTEGER,
+      player_name  TEXT,
+      assist_id    INTEGER,
+      assist_name  TEXT,
+      elapsed      INTEGER,
+      extra        INTEGER,
+      detail       TEXT,
+      comments     TEXT,
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
   // ── Football tables ──────────────────────────────────────────────────────────
 
   await sql`
