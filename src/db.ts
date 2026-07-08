@@ -312,5 +312,36 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // ── AFL tables ───────────────────────────────────────────────────────────────
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS afl_matches (
+      id           SERIAL PRIMARY KEY,
+      round        TEXT NOT NULL,
+      home_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      away_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      date         TIMESTAMPTZ,
+      home_score   JSONB,
+      away_score   JSONB,
+      home_winner  BOOLEAN,
+      status       TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled', 'in_progress', 'completed'))
+    )
+  `;
+
+  // Migrate AFL data from matches to afl_matches
+  try {
+    const migratedCount = await sql`
+      INSERT INTO afl_matches (id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status)
+      SELECT id, round, home_team_id, away_team_id, date, home_score, away_score, home_winner, status
+      FROM matches
+      WHERE round = 'Regular Season'
+      ON CONFLICT (id) DO NOTHING
+    `;
+    console.log('Migrated AFL data from matches to afl_matches');
+  } catch (err) {
+    console.log('AFL migration skipped or already completed:', err instanceof Error ? err.message : err);
+  }
+
   console.log('Database schema initialised');
 }
