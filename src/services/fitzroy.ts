@@ -219,7 +219,7 @@ export async function syncFitzroyData(): Promise<SyncStats> {
 
   // Remove AFL matches older than 60 days before syncing to keep the DB lean
   try {
-    await sql`DELETE FROM matches WHERE date < NOW() - INTERVAL '60 days'`;
+    await sql`DELETE FROM afl_matches WHERE date < NOW() - INTERVAL '60 days'`;
     console.log('AFL sync: pruned matches older than 60 days');
   } catch (err) {
     console.error('AFL sync: failed to prune old matches:', err instanceof Error ? err.message : err);
@@ -247,7 +247,7 @@ export async function syncFitzroyData(): Promise<SyncStats> {
       };
 
       await sql`
-        INSERT INTO matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
+        INSERT INTO afl_matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
         VALUES (
           ${m.Round},
           ${homeId},
