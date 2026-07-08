@@ -3,7 +3,7 @@
  *
  * Fetches fixture and event data from v3.football.api-sports.io for the
  * FIFA World Cup 2026 (league_id: 1, season: 2026) and stores them in the
- * generic `matches` and `match_events` tables.
+ * generic `world_cup_matches` and `match_events` tables.
  *
  * Only matches from the last 60 days are inserted so the table stays lean.
  * Both inserts use ON CONFLICT DO NOTHING to avoid duplicates on re-runs.
@@ -162,7 +162,7 @@ export interface WorldCupSyncStats {
 
 /**
  * Fetch World Cup 2026 fixtures from the Football API and upsert them into
- * the `matches` and `match_events` tables.
+ * the `world_cup_matches` and `match_events` tables.
  *
  * Only matches from the last 60 days are processed.  Each match is inserted
  * with ON CONFLICT DO NOTHING so repeated runs are safe.  Events are inserted
@@ -241,7 +241,7 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
 
       // ── Insert match ────────────────────────────────────────────────────────
       const matchRows = await sql<{ id: number }[]>`
-        INSERT INTO matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
+        INSERT INTO world_cup_matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
         VALUES (
           ${round},
           ${homeTeamId},
@@ -260,7 +260,7 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
       let matchDbId: number | null = matchRows[0]?.id ?? null;
       if (matchDbId === null) {
         const existing = await sql<{ id: number }[]>`
-          SELECT id FROM matches
+          SELECT id FROM world_cup_matches
           WHERE home_team_id = ${homeTeamId}
             AND away_team_id = ${awayTeamId}
             AND date = ${matchDate}
