@@ -99,6 +99,11 @@ export interface SyncResult {
   message: string;
 }
 
+export interface WorldCupSyncStats {
+  synced: number;
+  errors: number;
+}
+
 // ── Football Domain Types ─────────────────────────────────────────────────────
 
 export interface FootballTeam {
