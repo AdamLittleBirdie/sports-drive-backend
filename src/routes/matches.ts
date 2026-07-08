@@ -95,42 +95,28 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
           row_to_json(ht.*) AS home_team,
           row_to_json(at.*) AS away_team,
           'AFL' AS sport
-        FROM matches m
+        FROM afl_matches m
         LEFT JOIN teams ht ON ht.id = m.home_team_id
         LEFT JOIN teams at ON at.id = m.away_team_id
         ORDER BY m.date DESC NULLS LAST
       `;
 
-      // Fetch Football matches (Premier League, La Liga, Champions League, World Cup)
-      const footballMatches = await sql<AllMatch[]>`
+      // Fetch World Cup matches
+      const worldCupMatches = await sql<AllMatch[]>`
         SELECT 
-          fm.id, fm.round, fm.home_team_id, fm.away_team_id, fm.date,
-          fm.home_score, fm.away_score, fm.status,
-          row_to_json(ft.*) AS home_team,
+          m.id, m.round, m.home_team_id, m.away_team_id, m.date, 
+          m.home_score, m.away_score, m.status,
+          row_to_json(ht.*) AS home_team,
           row_to_json(at.*) AS away_team,
-          'Football' AS sport
-        FROM football_matches fm
-        LEFT JOIN football_teams ft ON ft.id = fm.home_team_id
-        LEFT JOIN football_teams at ON at.id = fm.away_team_id
-        ORDER BY fm.date DESC NULLS LAST
-      `;
-
-      // Fetch Basketball matches (NBA)
-      const basketballMatches = await sql<AllMatch[]>`
-        SELECT 
-          bm.id, bm.round, bm.home_team_id, bm.away_team_id, bm.date,
-          bm.home_score, bm.away_score, bm.status,
-          row_to_json(bt.*) AS home_team,
-          row_to_json(at.*) AS away_team,
-          'Basketball' AS sport
-        FROM basketball_matches bm
-        LEFT JOIN basketball_teams bt ON bt.id = bm.home_team_id
-        LEFT JOIN basketball_teams at ON at.id = bm.away_team_id
-        ORDER BY bm.date DESC NULLS LAST
+          'World Cup' AS sport
+        FROM world_cup_matches m
+        LEFT JOIN teams ht ON ht.id = m.home_team_id
+        LEFT JOIN teams at ON at.id = m.away_team_id
+        ORDER BY m.date DESC NULLS LAST
       `;
 
       // Combine and sort by date (most recent first)
-      const allMatches = [...aflMatches, ...footballMatches, ...basketballMatches]
+      const allMatches = [...aflMatches, ...worldCupMatches]
         .sort((a, b) => {
           if (!a.date && !b.date) return 0;
           if (!a.date) return 1;
