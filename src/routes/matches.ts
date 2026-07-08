@@ -87,7 +87,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get<{ Reply: ApiResponse<AllMatch[]> }>('/api/all-matches', async (_req, reply) => {
     try {
-      // Fetch AFL matches
+      // Fetch AFL matches (Regular Season only)
       const aflMatches = await sql<AllMatch[]>`
         SELECT 
           m.id, m.round, m.home_team_id, m.away_team_id, m.date, 
@@ -98,6 +98,22 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
         FROM matches m
         LEFT JOIN teams ht ON ht.id = m.home_team_id
         LEFT JOIN teams at ON at.id = m.away_team_id
+        WHERE m.round = 'Regular Season'
+        ORDER BY m.date DESC NULLS LAST
+      `;
+
+      // Fetch World Cup matches (non-Regular Season rounds)
+      const worldCupMatches = await sql<AllMatch[]>`
+        SELECT 
+          m.id, m.round, m.home_team_id, m.away_team_id, m.date, 
+          m.home_score, m.away_score, m.status,
+          row_to_json(ht.*) AS home_team,
+          row_to_json(at.*) AS away_team,
+          'World Cup' AS sport
+        FROM matches m
+        LEFT JOIN teams ht ON ht.id = m.home_team_id
+        LEFT JOIN teams at ON at.id = m.away_team_id
+        WHERE m.round != 'Regular Season'
         ORDER BY m.date DESC NULLS LAST
       `;
 
@@ -130,7 +146,7 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
       `;
 
       // Combine and sort by date (most recent first)
-      const allMatches = [...aflMatches, ...footballMatches, ...basketballMatches]
+      const allMatches = [...aflMatches, ...worldCupMatches, ...footballMatches, ...basketballMatches]
         .sort((a, b) => {
           if (!a.date && !b.date) return 0;
           if (!a.date) return 1;
