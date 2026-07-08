@@ -151,4 +151,50 @@ export async function debugRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ statusCode: 500, error: 'Failed to fetch recent matches' });
     }
   });
+
+  // ── GET /api/debug/table-counts ────────────────────────────────────────────
+
+  /**
+   * Returns the raw row counts for all match tables.
+   * Useful for identifying duplicate data or unexpected row inflation
+   * (e.g. /api/all-matches returning more results than expected).
+   */
+  app.get<{ Reply: ApiResponse<any> }>('/api/debug/table-counts', async (_req, reply) => {
+    try {
+      const [aflCount] = await sql<[{ count: string }]>`
+        SELECT COUNT(*)::text AS count FROM afl_matches
+      `;
+
+      const [worldCupCount] = await sql<[{ count: string }]>`
+        SELECT COUNT(*)::text AS count FROM world_cup_matches
+      `;
+
+      const [footballCount] = await sql<[{ count: string }]>`
+        SELECT COUNT(*)::text AS count FROM football_matches
+      `;
+
+      const [basketballCount] = await sql<[{ count: string }]>`
+        SELECT COUNT(*)::text AS count FROM basketball_matches
+      `;
+
+      const [matchesCount] = await sql<[{ count: string }]>`
+        SELECT COUNT(*)::text AS count FROM matches
+      `;
+
+      const data = {
+        afl_matches: parseInt(aflCount.count, 10),
+        world_cup_matches: parseInt(worldCupCount.count, 10),
+        football_matches: parseInt(footballCount.count, 10),
+        basketball_matches: parseInt(basketballCount.count, 10),
+        matches: parseInt(matchesCount.count, 10),
+        total_all_matches: parseInt(aflCount.count, 10) + parseInt(worldCupCount.count, 10),
+        queried_at: new Date().toISOString(),
+      };
+
+      return reply.code(200).send({ statusCode: 200, data });
+    } catch (err) {
+      app.log.error(err);
+      return reply.code(500).send({ statusCode: 500, error: 'Failed to fetch table counts' });
+    }
+  });
 }
