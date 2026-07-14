@@ -3,6 +3,126 @@ import cron from 'node-cron';
 import { syncFitzroyData, syncAflPlayers, syncLiveFixture } from './services/fitzroy.js';
 import { syncWorldCupData } from './services/worldcup.js';
 
+// ── Dynamic match-start cron scheduling ───────────────────────────────────────
+
+interface ScheduledMatchStart {
+  matchId: number;
+  sport: 'AFL' | 'World Cup';
+  startTime: Date;
+  cronTask: cron.ScheduledTask | null;
+}
+
+/** Map of match IDs to their scheduled cron jobs for match-start syncs */
+const scheduledMatchStarts = new Map<number, ScheduledMatchStart>();
+
+/**
+ * Schedule a sync check for a single match at its expected start time.
+ * Runs at startTime + 5 min buffer, checks if match is in_progress.
+ * If live, switches to 1-minute syncing. If not, reschedules +5 min.
+ */
+function scheduleMatchStartSync(matchId: number, startTime: Date, sport: 'AFL' | 'World Cup'): void {
+  // Cancel any existing scheduled task for this match
+  const existing = scheduledMatchStarts.get(matchId);
+  if (existing?.cronTask) {
+    existing.cronTask.stop();
+  }
+
+  const bufferMs = 5 * 60 * 1000; // 5 minute buffer for timezone variance
+  const syncTime = new Date(startTime.getTime() + bufferMs);
+
+  // Only schedule if in the future
+  if (syncTime < new Date()) {
+    console.log(
+      `Match ${matchId} (${sport}) start time ${startTime.toISOString()} is in the past, skipping schedule`
+    );
+    return;
+  }
+
+  const cron_str = `${syncTime.getUTCMinutes()} ${syncTime.getUTCHours()} ${syncTime.getUTCDate()} ${syncTime.getUTCMonth() + 1} *`;
+
+  try {
+    const task = cron.schedule(cron_str, async () => {
+      console.log(`Match-start sync running for ${sport} match ${matchId}...`);
+      try {
+        // Run a quick check on this specific match
+        if (sport === 'AFL') {
+          await syncLiveFixture(matchId);
+        } else if (sport === 'World Cup') {
+          // For World Cup, we'd need a syncWorldCupFixture equivalent
+          // For now, trigger a full World Cup sync
+          await syncWorldCupData();
+        }
+
+        // Check if the match is now in_progress
+        const table = sport === 'AFL' ? 'afl_matches' : 'world_cup_matches';
+        const [match] = await sql<{ status: string }[]>`
+          SELECT status FROM ${sql(table)} WHERE id = ${matchId}
+        `;
+
+        if (match?.status === 'in_progress') {
+          console.log(`Match ${matchId} (${sport}) is now in_progress, switching to live syncing`);
+          // performSync() will pick it up on the next run (1 min cadence for live)
+        } else {
+          // Reschedule for 5 minutes later
+          console.log(`Match ${matchId} (${sport}) not yet in_progress, rescheduling +5 min`);
+          scheduleMatchStartSync(matchId, new Date(syncTime.getTime() + bufferMs), sport);
+        }
+      } catch (err) {
+        console.error(`Match-start sync error for ${sport} match ${matchId}:`, err);
+      }
+    });
+
+    scheduledMatchStarts.set(matchId, { matchId, sport, startTime, cronTask: task });
+    console.log(
+      `Scheduled match-start sync for ${sport} match ${matchId} at ${syncTime.toISOString()}`
+    );
+  } catch (err) {
+    console.error(`Failed to schedule match-start sync for ${sport} match ${matchId}:`, err);
+  }
+}
+
+/**
+ * Extract all upcoming match start times from the database and schedule dynamic crons.
+ * Called after each full sync to update the schedule.
+ */
+async function scheduleUpcomingMatches(): Promise<void> {
+  try {
+    // Get all upcoming AFL matches (not yet completed)
+    const aflMatches = await sql<{ id: number; date: Date }[]>`
+      SELECT id, date FROM afl_matches 
+      WHERE date > NOW() - INTERVAL '10 minutes'
+      AND status != 'completed'
+      ORDER BY date ASC
+    `;
+
+    // Get all upcoming World Cup matches
+    const wcMatches = await sql<{ id: number; date: Date }[]>`
+      SELECT id, date FROM world_cup_matches 
+      WHERE date > NOW() - INTERVAL '10 minutes'
+      AND status != 'completed'
+      ORDER BY date ASC
+    `;
+
+    console.log(`Scheduling ${aflMatches.length} AFL + ${wcMatches.length} World Cup match-start syncs`);
+
+    // Schedule AFL matches
+    for (const match of aflMatches) {
+      if (match.date) {
+        scheduleMatchStartSync(match.id, new Date(match.date), 'AFL');
+      }
+    }
+
+    // Schedule World Cup matches
+    for (const match of wcMatches) {
+      if (match.date) {
+        scheduleMatchStartSync(match.id, new Date(match.date), 'World Cup');
+      }
+    }
+  } catch (err) {
+    console.error('Failed to schedule upcoming matches:', err);
+  }
+}
+
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
@@ -467,6 +587,9 @@ async function performSync(): Promise<void> {
     nextSyncTimer = setTimeout(() => {
       performSync();
     }, nextSyncMinutes * 60 * 1000);
+
+    // Update match-start schedules after syncing
+    void scheduleUpcomingMatches();
   } catch (err) {
     console.error('Sync error:', err);
     // Retry in 5 minutes on error
