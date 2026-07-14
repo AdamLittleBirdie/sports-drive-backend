@@ -1,0 +1,66 @@
+name: Build Android App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG=${{ github.ref }}
+          VERSION=${TAG#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+      
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Get Flutter dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+      
+      - name: Update pubspec.yaml with version
+        working-directory: apps/mobile
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          BUILD_NUMBER=$(echo $VERSION | tr '.' '\n' | tail -1)
+          sed -i "s/version: .*/version: $VERSION+$BUILD_NUMBER/" pubspec.yaml
+          echo "Updated pubspec.yaml to version: $VERSION+$BUILD_NUMBER"
+          cat pubspec.yaml | grep version
+      
+      - name: Build APK
+        working-directory: apps/mobile
+        run: flutter build apk --release
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: apps/mobile/build/app/outputs/flutter-app.apk
+          tag_name: ${{ github.ref }}
+          body: |
+            ## Sports Drive Mobile App v${{ steps.version.outputs.version }}
+            
+            Android APK ready for testing.
+            
+            **Installation:**
+            1. Download the APK from the assets below
+            2. Enable "Unknown Sources" on your Android device
+            3. Install the APK
+            
+            **Testing:**
+            - Connect to backend: https://sports-drive-backend-production.up.railway.app
+            - Test all match feeds and scores
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
