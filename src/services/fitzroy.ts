@@ -8,6 +8,12 @@
 
 import axios from 'axios';
 import { sql } from '../db.js';
+import {
+  getMatchStatus,
+  generateTeamAbbreviation,
+  formatAflScore,
+  normalizeRound,
+} from '../utils/data.js';
 
 // ── Types for raw Fitzroy / afltables payloads ────────────────────────────────
 
@@ -30,41 +36,10 @@ interface FitzroyMatch {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Derive a short abbreviation from a team name.
- * e.g. "Greater Western Sydney" → "GWS", "Richmond" → "RIC"
- */
-function abbreviate(name: string): string {
-  const known: Record<string, string> = {
-    'Adelaide': 'ADE',
-    'Brisbane Lions': 'BRL',
-    'Carlton': 'CAR',
-    'Collingwood': 'COL',
-    'Essendon': 'ESS',
-    'Fremantle': 'FRE',
-    'Geelong': 'GEE',
-    'Gold Coast': 'GCS',
-    'Greater Western Sydney': 'GWS',
-    'GWS Giants': 'GWS',
-    'Hawthorn': 'HAW',
-    'Melbourne': 'MEL',
-    'North Melbourne': 'NME',
-    'Port Adelaide': 'PAD',
-    'Richmond': 'RIC',
-    'St Kilda': 'STK',
-    'Sydney': 'SYD',
-    'West Coast': 'WCE',
-    'Western Bulldogs': 'WBD',
-  };
-  if (known[name]) return known[name];
-  // Fallback: first 3 uppercase letters
-  return name.replace(/[^A-Za-z ]/g, '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3);
-}
-
-/**
  * Upsert a team row and return its id.
  */
 async function upsertTeam(name: string): Promise<number> {
-  const abbr = abbreviate(name);
+  const abbr = generateTeamAbbreviation(name);
   const rows = await sql<{ id: number }[]>`
     INSERT INTO teams (name, abbreviation)
     VALUES (${name}, ${abbr})
@@ -133,15 +108,6 @@ const API_SPORTS_BASE_URL = 'https://v1.afl.api-sports.io';
 const API_SPORTS_KEY = '404f293f746d43be3efd5457c97406d1';
 
 /**
- * Map an API-Sports status short code to our internal match status.
- */
-function apiSportsStatus(short: string): 'scheduled' | 'in_progress' | 'completed' {
-  if (short === 'FT' || short === 'AET' || short === 'PEN') return 'completed';
-  if (short === 'LIVE' || short === '1H' || short === '2H' || short === 'HT') return 'in_progress';
-  return 'scheduled'; // NS (Not Started) and anything else
-}
-
-/**
  * Attempt to fetch match data from the API-Sports AFL API.
  * Returns an empty array if the request fails.
  */
@@ -167,9 +133,7 @@ async function fetchUpstreamMatches(): Promise<FitzroyMatch[]> {
       const season = g.league?.season ?? new Date(g.date).getFullYear();
       // API-Sports provides round as e.g. "Round - 5"; normalise to "Round 5"
       const rawRound = g.round ?? '';
-      const round = rawRound
-        ? rawRound.replace(/^Round\s*-\s*/i, 'Round ').trim()
-        : 'Round 1';
+      const round = rawRound ? normalizeRound(rawRound) : 'Round 1';
 
       const hasScores = g.scores?.home?.score != null && g.scores?.away?.score != null;
 
@@ -185,7 +149,7 @@ async function fetchUpstreamMatches(): Promise<FitzroyMatch[]> {
         'Away.Goals': hasScores ? g.scores.away.goals : null,
         'Away.Behinds': hasScores ? g.scores.away.behinds : null,
         Season: season,
-        Status: apiSportsStatus(g.status.short),
+        Status: getMatchStatus(g.status.short),
       };
     });
   } catch (err) {
@@ -235,16 +199,8 @@ export async function syncFitzroyData(): Promise<SyncStats> {
 
       const status = m.Status ?? matchStatus(m['Home.Points'], m['Away.Points'], m.Date);
 
-      const homeScoreJson = {
-        points: m['Home.Points'] ?? 0,
-        goals: m['Home.Goals'] ?? 0,
-        behinds: m['Home.Behinds'] ?? 0,
-      };
-      const awayScoreJson = {
-        points: m['Away.Points'] ?? 0,
-        goals: m['Away.Goals'] ?? 0,
-        behinds: m['Away.Behinds'] ?? 0,
-      };
+      const homeScoreJson = formatAflScore(m['Home.Points'], m['Home.Goals'], m['Home.Behinds']);
+      const awayScoreJson = formatAflScore(m['Away.Points'], m['Away.Goals'], m['Away.Behinds']);
 
       await sql`
         INSERT INTO afl_matches (round, home_team_id, away_team_id, date, home_score, away_score, status)
@@ -253,8 +209,8 @@ export async function syncFitzroyData(): Promise<SyncStats> {
           ${homeId},
           ${awayId},
           ${m.Date ? new Date(m.Date) : null},
-          ${JSON.stringify(homeScoreJson)},
-          ${JSON.stringify(awayScoreJson)},
+          ${homeScoreJson},
+          ${awayScoreJson},
           ${status}
         )
         ON CONFLICT (date, home_team_id, away_team_id) DO UPDATE SET 

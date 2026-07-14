@@ -11,6 +11,12 @@
 
 import axios from 'axios';
 import { sql } from '../db.js';
+import {
+  getMatchStatus,
+  generateTeamAbbreviation,
+  formatWorldCupScore,
+  normalizeRound,
+} from '../utils/data.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -78,39 +84,10 @@ const footballApi = axios.create({
 });
 
 /**
- * Map an API-Football status short code to our internal match status.
- */
-function mapStatus(short: string): 'scheduled' | 'in_progress' | 'completed' {
-  switch (short) {
-    case 'FT':
-    case 'AET':
-    case 'PEN':
-      return 'completed';
-    case 'LIVE':
-    case '1H':
-    case '2H':
-    case 'HT':
-    case 'ET':
-    case 'BT':
-    case 'P':
-      return 'in_progress';
-    default:
-      return 'scheduled';
-  }
-}
-
-/**
  * Upsert a team into the generic `teams` table and return its internal id.
  */
 async function upsertTeam(name: string): Promise<number> {
-  // Derive a short abbreviation: first letter of each word, up to 3 chars
-  const abbreviation = name
-    .replace(/[^A-Za-z ]/g, '')
-    .split(' ')
-    .map(w => w[0] ?? '')
-    .join('')
-    .toUpperCase()
-    .slice(0, 3);
+  const abbreviation = generateTeamAbbreviation(name);
 
   const rows = await sql<{ id: number }[]>`
     INSERT INTO teams (name, abbreviation)
@@ -203,41 +180,27 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
       const awayTeamId = await upsertTeam(f.teams.away.name);
 
       // ── Build score JSON ────────────────────────────────────────────────────
-      const homeScoreJson = {
-        regular: {
-          home: f.score.fulltime.home ?? null,
-          away: f.score.fulltime.away ?? null,
-        },
-        extra: {
-          home: f.score.extratime.home ?? null,
-          away: f.score.extratime.away ?? null,
-        },
-        penalty: {
-          home: f.score.penalty.home ?? null,
-          away: f.score.penalty.away ?? null,
-        },
-        winner: f.teams.home.winner,
-      };
+      const homeScoreJson = formatWorldCupScore(
+        f.score.fulltime.home,
+        f.score.fulltime.away,
+        f.score.extratime.home,
+        f.score.extratime.away,
+        f.score.penalty.home,
+        f.score.penalty.away,
+      );
 
-      const awayScoreJson = {
-        regular: {
-          home: f.score.fulltime.home ?? null,
-          away: f.score.fulltime.away ?? null,
-        },
-        extra: {
-          home: f.score.extratime.home ?? null,
-          away: f.score.extratime.away ?? null,
-        },
-        penalty: {
-          home: f.score.penalty.home ?? null,
-          away: f.score.penalty.away ?? null,
-        },
-        winner: f.teams.away.winner,
-      };
+      const awayScoreJson = formatWorldCupScore(
+        f.score.fulltime.home,
+        f.score.fulltime.away,
+        f.score.extratime.home,
+        f.score.extratime.away,
+        f.score.penalty.home,
+        f.score.penalty.away,
+      );
 
-      const round = f.league.round ?? 'Unknown';
+      const round = normalizeRound(f.league.round ?? '');
       const matchDate = f.fixture.date ? new Date(f.fixture.date) : null;
-      const status = mapStatus(f.fixture.status.short);
+      const status = getMatchStatus(f.fixture.status.short);
 
       // ── Insert match ────────────────────────────────────────────────────────
       const matchRows = await sql<{ id: number }[]>`
@@ -247,8 +210,8 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
           ${homeTeamId},
           ${awayTeamId},
           ${matchDate},
-          ${JSON.stringify(homeScoreJson)},
-          ${JSON.stringify(awayScoreJson)},
+          ${homeScoreJson},
+          ${awayScoreJson},
           ${status}
         )
         ON CONFLICT (date, home_team_id, away_team_id) DO UPDATE SET 
