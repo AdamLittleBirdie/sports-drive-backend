@@ -1,4 +1,7 @@
 import postgres from 'postgres';
+import cron from 'node-cron';
+import { syncFitzroyData } from './services/fitzroy.js';
+import { syncWorldCupData } from './services/worldcup.js';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
@@ -291,6 +294,12 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // Unique index required for the ON CONFLICT upsert in the Fitzroy sync service
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS afl_matches_date_home_away_idx
+    ON afl_matches (date, home_team_id, away_team_id)
+  `;
+
   // Migrate AFL data from matches to afl_matches
   try {
     const migratedCount = await sql`
@@ -322,6 +331,12 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // Unique index required for the ON CONFLICT upsert in the World Cup sync service
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS world_cup_matches_date_home_away_idx
+    ON world_cup_matches (date, home_team_id, away_team_id)
+  `;
+
   // Migrate World Cup data from matches to world_cup_matches
   try {
     const migratedCount = await sql`
@@ -335,6 +350,18 @@ export async function initDb(): Promise<void> {
   } catch (err) {
     console.log('World Cup migration skipped or already completed:', err instanceof Error ? err.message : err);
   }
+
+  // Schedule AFL and World Cup data syncs every 6 hours
+  cron.schedule('0 */6 * * *', async () => {
+    console.log('Scheduled sync running...');
+    try {
+      await syncFitzroyData();
+      await syncWorldCupData();
+      console.log('Scheduled sync complete');
+    } catch (err) {
+      console.error('Scheduled sync error:', err);
+    }
+  });
 
   console.log('Database schema initialised');
 }
