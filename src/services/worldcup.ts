@@ -251,7 +251,10 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
           ${JSON.stringify(awayScoreJson)},
           ${status}
         )
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (date, home_team_id, away_team_id) DO UPDATE SET 
+          status = EXCLUDED.status, 
+          home_score = EXCLUDED.home_score, 
+          away_score = EXCLUDED.away_score
         RETURNING id
       `;
 
