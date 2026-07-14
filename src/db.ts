@@ -1,5 +1,4 @@
 import postgres from 'postgres';
-import cron from 'node-cron';
 import { syncFitzroyData } from './services/fitzroy.js';
 import { syncWorldCupData } from './services/worldcup.js';
 
@@ -351,17 +350,57 @@ export async function initDb(): Promise<void> {
     console.log('World Cup migration skipped or already completed:', err instanceof Error ? err.message : err);
   }
 
-  // Schedule AFL and World Cup data syncs every 6 hours
-  cron.schedule('0 */6 * * *', async () => {
-    console.log('Scheduled sync running...');
-    try {
-      await syncFitzroyData();
-      await syncWorldCupData();
-      console.log('Scheduled sync complete');
-    } catch (err) {
-      console.error('Scheduled sync error:', err);
-    }
-  });
+  // Kick off the adaptive sync scheduler
+  performSync();
 
   console.log('Database schema initialised');
+}
+
+let nextSyncTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Runs an AFL + World Cup sync, then schedules the next sync based on
+ * whether any matches are currently in progress. Live matches get synced
+ * every minute; otherwise we fall back to a 6 hour cadence.
+ */
+async function performSync(): Promise<void> {
+  console.log('Sync running...');
+  try {
+    await syncFitzroyData();
+    await syncWorldCupData();
+    console.log('Sync complete');
+
+    // Check if any matches are in_progress
+    const [{ count }] = await sql<[{ count: string }]>`
+      SELECT COUNT(*)::text as count
+      FROM (
+        SELECT status FROM afl_matches WHERE status = 'in_progress'
+        UNION ALL
+        SELECT status FROM world_cup_matches WHERE status = 'in_progress'
+      ) as live_matches
+    `;
+
+    const liveMatchCount = parseInt(count, 10);
+
+    // Schedule next sync based on whether matches are live
+    const nextSyncMinutes = liveMatchCount > 0 ? 1 : 360; // 1 min if live, 6 hours if not
+    console.log(
+      `${liveMatchCount} live matches found. Next sync in ${nextSyncMinutes} minutes.`
+    );
+
+    // Clear existing timer if any
+    if (nextSyncTimer) clearTimeout(nextSyncTimer);
+
+    // Schedule next sync
+    nextSyncTimer = setTimeout(() => {
+      performSync();
+    }, nextSyncMinutes * 60 * 1000);
+  } catch (err) {
+    console.error('Sync error:', err);
+    // Retry in 5 minutes on error
+    if (nextSyncTimer) clearTimeout(nextSyncTimer);
+    nextSyncTimer = setTimeout(() => {
+      performSync();
+    }, 5 * 60 * 1000);
+  }
 }
