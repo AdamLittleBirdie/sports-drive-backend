@@ -1,5 +1,6 @@
 import postgres from 'postgres';
-import { syncFitzroyData } from './services/fitzroy.js';
+import cron from 'node-cron';
+import { syncFitzroyData, syncAflPlayers, syncLiveFixture } from './services/fitzroy.js';
 import { syncWorldCupData } from './services/worldcup.js';
 
 if (!process.env.DATABASE_URL) {
@@ -313,6 +314,41 @@ export async function initDb(): Promise<void> {
     console.log('AFL migration skipped or already completed:', err instanceof Error ? err.message : err);
   }
 
+  // ── AFL Player and Match Score tables ─────────────────────────────────────
+  
+  await sql`
+    CREATE TABLE IF NOT EXISTS afl_players (
+      id           SERIAL PRIMARY KEY,
+      api_id       INTEGER UNIQUE NOT NULL,
+      name         VARCHAR(255) NOT NULL,
+      team_id      INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS afl_match_events (
+      id           SERIAL PRIMARY KEY,
+      match_id     INTEGER NOT NULL REFERENCES afl_matches(id) ON DELETE CASCADE,
+      player_id    INTEGER REFERENCES afl_players(id) ON DELETE SET NULL,
+      event_type   VARCHAR(50) NOT NULL,
+      timestamp    INTEGER,
+      created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS afl_match_scores (
+      id           SERIAL PRIMARY KEY,
+      match_id     INTEGER NOT NULL REFERENCES afl_matches(id) ON DELETE CASCADE,
+      timestamp    TIMESTAMP NOT NULL,
+      home_score   INTEGER,
+      away_score   INTEGER,
+      created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
   // ── World Cup tables ──────────────────────────────────────────────────────────
 
   await sql`
@@ -353,6 +389,20 @@ export async function initDb(): Promise<void> {
   // Kick off the adaptive sync scheduler
   performSync();
 
+  // Initial player roster sync on startup
+  void syncAflPlayers(2026);
+
+  // Monthly player sync on the 1st at 01:00 UTC
+  cron.schedule('0 1 1 * *', async () => {
+    console.log('Monthly AFL player sync running...');
+    try {
+      await syncAflPlayers(2026);
+      console.log('Monthly player sync complete');
+    } catch (err) {
+      console.error('Monthly player sync error:', err);
+    }
+  });
+
   console.log('Database schema initialised');
 }
 
@@ -366,11 +416,7 @@ let nextSyncTimer: NodeJS.Timeout | null = null;
 async function performSync(): Promise<void> {
   console.log('Sync running...');
   try {
-    await syncFitzroyData();
-    await syncWorldCupData();
-    console.log('Sync complete');
-
-    // Check if any matches are in_progress
+    // Check if any matches are in_progress BEFORE syncing
     const [{ count }] = await sql<[{ count: string }]>`
       SELECT COUNT(*)::text as count
       FROM (
@@ -381,6 +427,32 @@ async function performSync(): Promise<void> {
     `;
 
     const liveMatchCount = parseInt(count, 10);
+    const liveOnly = liveMatchCount > 0;
+
+    if (liveOnly) {
+      // During live window, sync individual fixtures + record scores for worm
+      console.log('Syncing live fixtures individually...');
+
+      const liveAflMatches = await sql<[{ id: number }]>`
+        SELECT id FROM afl_matches WHERE status = 'in_progress'
+      `;
+
+      for (const match of liveAflMatches) {
+        try {
+          await syncLiveFixture(match.id);
+        } catch (err) {
+          console.error(`Failed to sync fixture ${match.id}:`, err);
+        }
+      }
+
+      console.log('Live fixture sync complete');
+    } else {
+      // Normal idle cadence - full sync
+      console.log('Running full sync...');
+      await syncFitzroyData();
+      await syncWorldCupData();
+      console.log('Sync complete');
+    }
 
     // Schedule next sync based on whether matches are live
     const nextSyncMinutes = liveMatchCount > 0 ? 1 : 360; // 1 min if live, 6 hours if not
