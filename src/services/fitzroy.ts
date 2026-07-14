@@ -228,3 +228,176 @@ export async function syncFitzroyData(): Promise<SyncStats> {
   console.log(`AFL sync complete (last 60 days) — synced: ${synced}, errors: ${errors}`);
   return { synced, errors };
 }
+
+/**
+ * Fetch all AFL players for a given season across all 18 teams.
+ * Called once on startup and monthly on the 1st at 01:00 UTC.
+ */
+export async function syncAflPlayers(season: number): Promise<SyncStats> {
+  let synced = 0;
+  let errors = 0;
+
+  // Cycle through all 18 AFL teams
+  for (let teamId = 1; teamId <= 18; teamId++) {
+    try {
+      const response = await axios.get<{ response: Array<{ id: number; name: string }> }>(
+        `${API_SPORTS_BASE_URL}/players`,
+        {
+          params: {
+            season,
+            team: teamId,
+          },
+          headers: {
+            'x-apisports-key': API_SPORTS_KEY,
+          },
+          timeout: 10000,
+        },
+      );
+
+      const players = response.data?.response;
+      if (!Array.isArray(players)) {
+        console.log(`No players found for team ${teamId}`);
+        continue;
+      }
+
+      // Get the team_id from the database for this API team ID
+      const [team] = await sql<{ id: number }[]>`
+        SELECT id FROM teams WHERE name IN (
+          SELECT DISTINCT home_team_name FROM afl_matches WHERE home_team_id = ${teamId}
+          UNION
+          SELECT DISTINCT away_team_name FROM afl_matches WHERE away_team_id = ${teamId}
+        ) LIMIT 1
+      `;
+
+      if (!team) {
+        console.log(`Team ${teamId} not found in database, skipping players`);
+        continue;
+      }
+
+      // Upsert each player
+      for (const player of players) {
+        try {
+          await sql`
+            INSERT INTO afl_players (api_id, name, team_id)
+            VALUES (${player.id}, ${player.name}, ${team.id})
+            ON CONFLICT (api_id) DO UPDATE SET 
+              name = EXCLUDED.name,
+              updated_at = CURRENT_TIMESTAMP
+          `;
+          synced++;
+        } catch (err) {
+          console.error(`Error syncing player ${player.name}:`, err);
+          errors++;
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to fetch players for team ${teamId}:`, err instanceof Error ? err.message : err);
+      errors++;
+    }
+  }
+
+  console.log(`AFL players sync complete — synced: ${synced}, errors: ${errors}`);
+  return { synced, errors };
+}
+
+/**
+ * Sync a single live fixture via individual API calls.
+ * Fetches game events (goal scorers) and current match state (live scores).
+ * Records score in afl_match_scores for worm visualization.
+ */
+export async function syncLiveFixture(gameId: number): Promise<void> {
+  try {
+    // Fetch game events (goal scorers)
+    const eventsResponse = await axios.get<{ response: Array<{ id: number; player: { id: number; name: string }; type: string }> }>(
+      `${API_SPORTS_BASE_URL}/games/events`,
+      {
+        params: { id: gameId },
+        headers: { 'x-apisports-key': API_SPORTS_KEY },
+        timeout: 10000,
+      },
+    );
+
+    const events = eventsResponse.data?.response || [];
+
+    // Fetch game state and live scores
+    const gameResponse = await axios.get<{ response: { id: number; scores: { home: { score: number; goals: number; behinds: number }; away: { score: number; goals: number; behinds: number } } } }>(
+      `${API_SPORTS_BASE_URL}/games`,
+      {
+        params: { id: gameId },
+        headers: { 'x-apisports-key': API_SPORTS_KEY },
+        timeout: 10000,
+      },
+    );
+
+    const gameData = gameResponse.data?.response;
+    if (!gameData) {
+      console.error(`No game data returned for game ${gameId}`);
+      return;
+    }
+
+    const homeScore = gameData.scores?.home?.score ?? 0;
+    const awayScore = gameData.scores?.away?.score ?? 0;
+
+    // Find the match in the database
+    const [match] = await sql<{ id: number }[]>`
+      SELECT id FROM afl_matches WHERE id = ${gameId} LIMIT 1
+    `;
+
+    if (!match) {
+      console.error(`Match ${gameId} not found in database`);
+      return;
+    }
+
+    // Update afl_matches with live scores
+    const homeScoreJson = formatAflScore(
+      homeScore,
+      gameData.scores?.home?.goals ?? 0,
+      gameData.scores?.home?.behinds ?? 0,
+    );
+    const awayScoreJson = formatAflScore(
+      awayScore,
+      gameData.scores?.away?.goals ?? 0,
+      gameData.scores?.away?.behinds ?? 0,
+    );
+
+    await sql`
+      UPDATE afl_matches
+      SET 
+        home_score = ${homeScoreJson},
+        away_score = ${awayScoreJson},
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${match.id}
+    `;
+
+    // Record score for worm visualization (every minute)
+    await sql`
+      INSERT INTO afl_match_scores (match_id, timestamp, home_score, away_score)
+      VALUES (${match.id}, NOW(), ${homeScore}, ${awayScore})
+    `;
+
+    // Process goal events
+    for (const event of events) {
+      if (event.type === 'goal' || event.type === 'behind') {
+        try {
+          const [player] = await sql<{ id: number }[]>`
+            SELECT id FROM afl_players WHERE api_id = ${event.player.id} LIMIT 1
+          `;
+
+          if (player) {
+            await sql`
+              INSERT INTO afl_match_events (match_id, player_id, event_type, timestamp)
+              VALUES (${match.id}, ${player.id}, ${event.type}, ${event.id ?? null})
+              ON CONFLICT DO NOTHING
+            `;
+          }
+        } catch (err) {
+          console.error(`Error storing event for player ${event.player.name}:`, err);
+        }
+      }
+    }
+
+    console.log(`Live fixture ${gameId} synced: ${homeScore}-${awayScore}`);
+  } catch (err) {
+    console.error(`Failed to sync live fixture ${gameId}:`, err instanceof Error ? err.message : err);
+  }
+}

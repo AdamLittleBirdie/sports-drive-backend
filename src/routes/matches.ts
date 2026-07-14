@@ -130,4 +130,40 @@ export async function matchRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ statusCode: 500, error: 'Failed to fetch matches' });
     }
   });
+
+  /**
+   * GET /api/matches/:id/score-history
+   * Returns time-series score data for a match (for worm visualization).
+   * Only includes matches that have score recordings.
+   */
+  app.get<{
+    Params: { id: string };
+    Reply: ApiResponse<Array<{ timestamp: string; home_score: number; away_score: number }>>;
+  }>('/api/matches/:id/score-history', async (req, reply) => {
+    const matchId = parseInt(req.params.id, 10);
+    if (isNaN(matchId)) {
+      return reply.code(400).send({ statusCode: 400, error: 'Invalid match id' });
+    }
+
+    try {
+      const scores = await sql<Array<{ timestamp: string; home_score: number; away_score: number }>>`
+        SELECT 
+          timestamp::text,
+          home_score,
+          away_score
+        FROM afl_match_scores
+        WHERE match_id = ${matchId}
+        ORDER BY timestamp ASC
+      `;
+
+      if (scores.length === 0) {
+        return reply.code(404).send({ statusCode: 404, error: 'No score history found for this match' });
+      }
+
+      return reply.code(200).send({ statusCode: 200, data: scores });
+    } catch (err) {
+      app.log.error(err);
+      return reply.code(500).send({ statusCode: 500, error: 'Failed to fetch score history' });
+    }
+  });
 }
