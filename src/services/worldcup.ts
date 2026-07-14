@@ -152,7 +152,7 @@ export interface WorldCupSyncStats {
  *   "penalty": { "home": 4, "away": 3 } }
  * ```
  */
-export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
+export async function syncWorldCupData(liveOnly: boolean = false): Promise<WorldCupSyncStats> {
   // Compute the 60-day cutoff once
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - 60);
@@ -160,7 +160,7 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
   const fixtures = await fetchWorldCupFixtures();
 
   // Filter to the last 60 days
-  const recent = fixtures.filter(f => {
+  let recent = fixtures.filter(f => {
     if (!f.fixture.date) return false;
     const matchDate = new Date(f.fixture.date);
     return !isNaN(matchDate.getTime()) && matchDate >= cutoff;
@@ -169,6 +169,14 @@ export async function syncWorldCupData(): Promise<WorldCupSyncStats> {
   console.log(
     `World Cup sync: ${fixtures.length} total fixtures, ${recent.length} within last 60 days`,
   );
+
+  if (liveOnly) {
+    recent = recent.filter(f => getMatchStatus(f.fixture.status.short) === 'in_progress');
+    if (recent.length === 0) {
+      console.log('World Cup sync (live-only): no in_progress matches found');
+      return { synced: 0, errors: 0 };
+    }
+  }
 
   let synced = 0;
   let errors = 0;

@@ -1,5 +1,4 @@
 import postgres from 'postgres';
-import cron from 'node-cron';
 import { syncFitzroyData } from './services/fitzroy.js';
 import { syncWorldCupData } from './services/worldcup.js';
 
@@ -351,17 +350,57 @@ export async function initDb(): Promise<void> {
     console.log('World Cup migration skipped or already completed:', err instanceof Error ? err.message : err);
   }
 
-  // Schedule AFL and World Cup data syncs every 6 hours
-  cron.schedule('0 */6 * * *', async () => {
-    console.log('Scheduled sync running...');
-    try {
-      await syncFitzroyData();
-      await syncWorldCupData();
-      console.log('Scheduled sync complete');
-    } catch (err) {
-      console.error('Scheduled sync error:', err);
-    }
-  });
+  // Kick off the adaptive sync loop. It reschedules itself based on whether
+  // any matches are currently in progress (1 minute) or not (6 hours).
+  void performSync();
 
   console.log('Database schema initialised');
+}
+
+let syncTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Run a sync pass for AFL and World Cup data, then schedule the next run.
+ *
+ * If any matches are currently `in_progress`, the sync runs in `liveOnly`
+ * mode (fetch everything, but only upsert in-progress matches) and the next
+ * run is scheduled 1 minute later. Otherwise a full sync runs and the next
+ * run is scheduled 6 hours later.
+ */
+async function performSync(): Promise<void> {
+  console.log('Sync running...');
+  try {
+    // Determine if we're in a live window by checking for in_progress matches FIRST
+    const [{ count }] = await sql<[{ count: string }]>`
+      SELECT COUNT(*)::text as count
+      FROM (
+        SELECT status FROM afl_matches WHERE status = 'in_progress'
+        UNION ALL
+        SELECT status FROM world_cup_matches WHERE status = 'in_progress'
+      ) as live_matches
+    `;
+
+    const liveMatchCount = parseInt(count, 10);
+    const liveOnly = liveMatchCount > 0;
+
+    // Sync with appropriate mode
+    console.log(liveOnly ? 'Syncing live matches only...' : 'Running full sync...');
+    await syncFitzroyData(liveOnly);
+    await syncWorldCupData(liveOnly);
+    console.log('Sync complete');
+
+    // Schedule next sync based on whether matches are live
+    const nextSyncMinutes = liveMatchCount > 0 ? 1 : 360;
+    console.log(
+      `${liveMatchCount} live matches found. Next sync in ${nextSyncMinutes} minutes.`,
+    );
+
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => void performSync(), nextSyncMinutes * 60 * 1000);
+  } catch (err) {
+    console.error('Sync error:', err);
+    // Fall back to the slow cadence on error so we don't hammer the API
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => void performSync(), 360 * 60 * 1000);
+  }
 }

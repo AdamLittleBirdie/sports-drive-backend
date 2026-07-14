@@ -169,7 +169,7 @@ export interface SyncStats {
  * Fetch AFL match data from upstream and upsert into Postgres.
  * Only matches from the last 60 days are inserted; older records are pruned.
  */
-export async function syncFitzroyData(): Promise<SyncStats> {
+export async function syncFitzroyData(liveOnly: boolean = false): Promise<SyncStats> {
   let matches = await fetchUpstreamMatches();
 
   // Compute the cutoff date (60 days ago) and filter matches to the window
@@ -180,6 +180,15 @@ export async function syncFitzroyData(): Promise<SyncStats> {
     const matchDate = new Date(m.Date);
     return !isNaN(matchDate.getTime()) && matchDate >= cutoff;
   });
+
+  if (liveOnly) {
+    // Only upsert matches that are currently live
+    matches = matches.filter(m => m.Status === 'in_progress');
+    if (matches.length === 0) {
+      console.log('AFL sync (live-only): no in_progress matches found');
+      return { synced: 0, errors: 0 };
+    }
+  }
 
   // Remove AFL matches older than 60 days before syncing to keep the DB lean
   try {
